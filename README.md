@@ -62,7 +62,7 @@ input_dir/
 
 ```bash
 # Download and run the setup script
-wget https://raw.githubusercontent.com/YOUR_USERNAME/NanoporeToBED-Pipeline/main/setup.sh
+wget https://raw.githubusercontent.com/markusdrag/NanoporeToBED-Pipeline/main/setup.sh
 bash setup.sh
 
 # Or specify a custom installation directory
@@ -81,7 +81,7 @@ The setup script will:
 
 ```bash
 # Clone the repository
-git clone https://github.com/YOUR_USERNAME/NanoporeToBED-Pipeline.git
+git clone https://github.com/markusdrag/NanoporeToBED-Pipeline.git
 cd NanoporeToBED-Pipeline
 
 # Make the script executable
@@ -90,8 +90,8 @@ chmod +x scripts/NanoporeToBED.sh
 
 Alternatively, download just the script:
 ```bash
-# Direct download (replace YOUR_USERNAME with actual GitHub username)
-wget https://raw.githubusercontent.com/YOUR_USERNAME/NanoporeToBED-Pipeline/main/scripts/NanoporeToBED.sh
+
+wget https://raw.githubusercontent.com/markusdrag/NanoporeToBED-Pipeline/main/scripts/NanoporeToBED.sh
 chmod +x NanoporeToBED.sh
 ```
 
@@ -140,7 +140,7 @@ micromamba activate nanopore_methylation
 For the fastest setup on your HPC, use the automated setup:
 ```bash
 # One-line setup
-wget -O - https://raw.githubusercontent.com/YOUR_USERNAME/NanoporeToBED-Pipeline/main/setup.sh | bash
+wget -O - https://raw.githubusercontent.com/markusdrag/NanoporeToBED-Pipeline/main/setup.sh | bash
 
 # Then activate and run
 cd NanoporeToBED-Pipeline
@@ -155,7 +155,7 @@ sbatch scripts/NanoporeToBED.sh \
 For manual setup:
 ```bash
 # 1. Get the pipeline
-git clone https://github.com/YOUR_USERNAME/NanoporeToBED-Pipeline.git
+git clone https://github.com/markusdrag/NanoporeToBED-Pipeline.git
 cd NanoporeToBED-Pipeline
 
 # 2. Load your HPC's module system (if available)
