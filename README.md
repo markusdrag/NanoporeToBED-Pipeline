@@ -355,8 +355,16 @@ If you use this pipeline, please cite:
 
 ## Licence
 
-[Add your licence here]
+MIT License (see LICENSE file)
 
 ## Contact
 
-[Add contact information]
+- **Lead Developer**: Markus Hodal Drag
+- **Email**: markus.drag@sund.ku.dk
+- **Institution**: University of Copenhagen
+- **GitHub**: https://github.com/markusdrag
+- **ORCID**: https://orcid.org/0000-0002-7412-6402
+
+For questions, bug reports, or feature requests, please:
+- Open an issue on GitHub: https://github.com/markusdrag/NanoporeToBED-Pipeline/issues
+- Or contact via email for collaboration inquiries
