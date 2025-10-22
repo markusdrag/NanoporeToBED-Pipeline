@@ -2,8 +2,7 @@
   <img src="nanoporetobed.png" alt="NanoporeToBED Pipeline Logo" width="400">
 </div>
 
-
-##
+#
 
 A comprehensive pipeline for processing Oxford Nanopore Technologies sequencing data with base modifications (5mC) to generate methylation BED files and quality metrics.
 
@@ -93,12 +92,12 @@ git clone https://github.com/markusdrag/NanoporeToBED-Pipeline.git
 cd NanoporeToBED-Pipeline
 
 # Make the script executable
-chmod +x scripts/NanoporeToBED.sh
+chmod +x NanoporeToBED.sh
 ```
 
 Alternatively, download just the script:
 ```bash
-wget https://raw.githubusercontent.com/markusdrag/NanoporeToBED-Pipeline/main/scripts/NanoporeToBED.sh
+wget https://raw.githubusercontent.com/markusdrag/NanoporeToBED-Pipeline/main/NanoporeToBED.sh
 chmod +x NanoporeToBED.sh
 ```
 
@@ -153,7 +152,7 @@ bash setup.sh
 
 # Then activate and run
 conda activate nanopore_methylation
-sbatch scripts/NanoporeToBED.sh \
+sbatch NanoporeToBED.sh \
   -i /data/nanopore/fastq_gpu_hac_mod \
   -o /data/nanopore/methylation_results \
   -ref /data/references/genome.fna \
@@ -174,10 +173,10 @@ conda env create -f environment.yml
 conda activate nanopore_methylation
 
 # 4. Test the script
-./scripts/NanoporeToBED.sh -h
+./NanoporeToBED.sh -h
 
 # 5. Run on your data
-sbatch scripts/NanoporeToBED.sh \
+sbatch NanoporeToBED.sh \
   -i /data/nanopore/fastq_gpu_hac_mod \
   -o /data/nanopore/methylation_results \
   -ref /data/references/genome.fna \
