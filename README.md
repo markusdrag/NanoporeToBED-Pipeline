@@ -1,3 +1,7 @@
+<div align="center">
+  <img src="nanoporetobed.png" alt="NanoporeToBED Pipeline Logo" width="400">
+</div>
+
 # NanoporeToBED Pipeline
 
 A comprehensive pipeline for processing Oxford Nanopore Technologies sequencing data with base modifications (5mC) to generate methylation BED files and quality metrics.
@@ -53,7 +57,7 @@ input_dir/
 
 **Directory structure notes:**
 - Top level: SRR codes (sequencing run identifiers)
-- Second level: Date or run identifier
+- Second level: Date or run identifier (automatically extracted from directory structure)
 - Sample directories: Any naming convention with metadata separated by underscores
 
 ## Installation
@@ -61,8 +65,11 @@ input_dir/
 ### Quick Automated Setup (Recommended for HPC)
 
 ```bash
-# Download and run the setup script
-wget https://raw.githubusercontent.com/markusdrag/NanoporeToBED-Pipeline/main/setup.sh
+# Clone the repository
+git clone https://github.com/markusdrag/NanoporeToBED-Pipeline.git
+cd NanoporeToBED-Pipeline
+
+# Run the setup script
 bash setup.sh
 
 # Or specify a custom installation directory
@@ -71,7 +78,7 @@ bash setup.sh /path/to/install/location
 
 The setup script will:
 - Create all necessary directories
-- Generate the pipeline script
+- Install the pipeline script
 - Create the conda environment automatically
 - Set up example files and documentation
 
@@ -90,7 +97,6 @@ chmod +x scripts/NanoporeToBED.sh
 
 Alternatively, download just the script:
 ```bash
-
 wget https://raw.githubusercontent.com/markusdrag/NanoporeToBED-Pipeline/main/scripts/NanoporeToBED.sh
 chmod +x NanoporeToBED.sh
 ```
@@ -139,11 +145,12 @@ micromamba activate nanopore_methylation
 
 For the fastest setup on your HPC, use the automated setup:
 ```bash
-# One-line setup
-wget -O - https://raw.githubusercontent.com/markusdrag/NanoporeToBED-Pipeline/main/setup.sh | bash
+# Clone and setup
+git clone https://github.com/markusdrag/NanoporeToBED-Pipeline.git
+cd NanoporeToBED-Pipeline
+bash setup.sh
 
 # Then activate and run
-cd NanoporeToBED-Pipeline
 conda activate nanopore_methylation
 sbatch scripts/NanoporeToBED.sh \
   -i /data/nanopore/fastq_gpu_hac_mod \
@@ -203,9 +210,10 @@ Where the input directory should contain your SRR folders from the Guppy output:
 |------|-----------|-------------|----------|---------|
 | `-i` | `--input` | Input directory containing SRR folders with barcoded samples | Yes | - |
 | `-o` | `--output` | Output directory for processed data | Yes | - |
-| `-ref` | `--reference` | Path to reference genome FASTA file (.fna) | Yes | - |
+| `-ref` | `--reference` | Path to reference genome FASTA file (.fna, .fa, or .fasta) | Yes | - |
 | `-t` | `--threads` | Number of threads to use for processing | No | 40 |
 | | `--dry-run` | Run in test mode without processing | No | false |
+| `-h` | `--help` | Show help message | No | - |
 
 ### Reference Genome Format
 The reference genome should be a single FASTA file:
@@ -263,16 +271,16 @@ output_dir/
 ## Running Tips
 
 ### SLURM Configuration
-Adjust SLURM parameters based on your data:
+Adjust SLURM parameters in the script header based on your data:
 ```bash
 #SBATCH -c 40          # CPU cores (adjust based on availability)
 #SBATCH --mem 192g     # Memory (scale with data size)
 #SBATCH --time=72:00:00 # Time limit (depends on dataset size)
-#SBATCH --account YOUR_ACCOUNT # Your HPC account
+#SBATCH --account YourAccount # Your HPC account
 ```
 
 ### Performance Optimisation
-- **Thread usage**: Set THREADS variable to match allocated cores
+- **Thread usage**: The `-t` parameter sets thread count (default: 40). Will automatically reduce if exceeds SLURM allocation
 - **Memory**: ~4-8 GB per thread is recommended
 - **Storage**: Ensure 3-5x input data size for temporary files
 - **Large datasets**: Consider processing in batches or increasing time allocation
@@ -283,14 +291,14 @@ Adjust SLURM parameters based on your data:
 2. **Corrupted BAM files**: Script automatically skips problematic BAMs with warnings
 3. **Missing reference**: Verify reference genome path and file exists
 4. **Timeout issues**: Extend time limit or process fewer samples
-5. **No samples found**: Check input directory structure matches expected pattern
+5. **No samples found**: Check input directory structure matches expected pattern (see error message for searched patterns)
 
 ### Monitoring Progress
 ```bash
 # Check job status
 squeue -u $USER
 
-# Monitor output log
+# Monitor SLURM output log
 tail -f NanoporeToBED.out
 
 # Check master log for overall progress
@@ -303,7 +311,7 @@ tail -f output_dir/logs/SRR*/*/sample_name.log
 ## Quality Control Metrics
 
 The pipeline generates several QC checkpoints:
-- File size validation (>100MB threshold for merged files)
+- File size validation (>100 MB threshold for merged files)
 - BAM header integrity checks
 - Alignment statistics via Qualimap
 - Methylation coverage in BED files
@@ -355,7 +363,7 @@ If you use this pipeline, please cite:
 
 ## Licence
 
-MIT License (see LICENSE file)
+MIT Licence (see LICENCE file)
 
 ## Contact
 
@@ -367,4 +375,4 @@ MIT License (see LICENSE file)
 
 For questions, bug reports, or feature requests, please:
 - Open an issue on GitHub: https://github.com/markusdrag/NanoporeToBED-Pipeline/issues
-- Or contact via email for collaboration inquiries
+- Or contact via email for collaboration enquiries
