@@ -2,8 +2,6 @@
   <img src="nanoporetobed.png" alt="NanoporeToBED Pipeline Logo" width="400">
 </div>
 
-# NanoporeToBED Pipeline
-
 A comprehensive pipeline for processing Oxford Nanopore Technologies sequencing data with base modifications (5mC) to generate methylation BED files and quality metrics.
 
 ## Overview
