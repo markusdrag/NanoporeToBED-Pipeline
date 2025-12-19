@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # NanoporeToBED Pipeline
-# Version: 1.1.0 (2025-12-19)
+# Version: 1.1.1 (2025-12-19)
 
 #SBATCH --job-name=NanoporeToBED
 #SBATCH --output=NanoporeToBED.out
@@ -11,7 +11,7 @@
 #SBATCH --time=72:00:00
 #SBATCH --account YourAccount
 
-VERSION="1.1.0"
+VERSION="1.1.1"
 
 # Environment
 cd $HOME
@@ -156,7 +156,8 @@ get_barcode() {
   if [[ -n "$bc_full" ]]; then
     # Extract just the number and format as b## (e.g., barcode03 -> b03)
     local bc_num=$(echo "$bc_full" | grep -oE '[0-9]+')
-    printf "b%02d" "$bc_num"
+    # Use 10# to force decimal interpretation (avoids octal issues with leading zeros)
+    printf "b%02d" "$((10#$bc_num))"
   else
     echo "b00"
   fi
