@@ -146,7 +146,8 @@ echo "Scanning for sample directories..."
 # Function to extract barcode number from BAM file
 get_barcode() {
   local bam="$1"
-  local bc_full=$(samtools view "$bam" 2>/dev/null | head -1 | grep -oE 'barcode[0-9]+' || echo "")
+  # Use subshell to avoid SIGPIPE from head closing pipe early
+  local bc_full=$(set +o pipefail; samtools view "$bam" 2>/dev/null | head -1 | grep -oE 'barcode[0-9]+' || true)
   if [[ -n "$bc_full" ]]; then
     # Extract just the number and format as b## (e.g., barcode03 -> b03)
     local bc_num=$(echo "$bc_full" | grep -oE '[0-9]+')
