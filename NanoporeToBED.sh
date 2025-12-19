@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # NanoporeToBED Pipeline
-# Version: 1.2.3 (2025-12-19)
+# Version: 1.3.0 (2025-12-19)
 
 #SBATCH --job-name=NanoporeToBED
 #SBATCH --output=NanoporeToBED.out
@@ -11,7 +11,7 @@
 #SBATCH --time=72:00:00
 #SBATCH --account YourAccount
 
-VERSION="1.2.3"
+VERSION="1.3.0"
 
 # Environment
 cd $HOME
@@ -441,6 +441,30 @@ echo "Processed: $sample_count sample(s)"
 echo "Threads used: $THREADS"
 echo "Output directory: $output_dir"
 echo "Master log: $log_file"
+echo ""
+
+# Step 5: Generate summary statistics and plots
+echo "=========================================="
+echo "Step 5/5: Generating Summary Report"
+echo "=========================================="
+
+# Get the directory where this script is located
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SUMMARY_SCRIPT="$SCRIPT_DIR/generate_summary.R"
+
+if [[ -f "$SUMMARY_SCRIPT" ]]; then
+  if command -v Rscript &> /dev/null; then
+    echo "Running summary statistics and plot generation..."
+    Rscript "$SUMMARY_SCRIPT" "$output_dir" 2>&1 | tee -a "$log_file"
+  else
+    echo "⚠️  Rscript not found - skipping summary report"
+    echo "   To generate summary, run: Rscript generate_summary.R $output_dir"
+  fi
+else
+  echo "⚠️  generate_summary.R not found in $SCRIPT_DIR"
+  echo "   Download from: https://github.com/markusdrag/NanoporeToBED-Pipeline"
+fi
+
 echo ""
 echo "Citation: Drag et al. (2025) bioRxiv 2025.04.11.648151"
 echo "🎉 All done!"
