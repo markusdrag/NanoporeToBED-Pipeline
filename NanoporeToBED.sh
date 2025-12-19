@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # NanoporeToBED Pipeline
-# Version: 1.2.0 (2025-12-19)
+# Version: 1.2.1 (2025-12-19)
 
 #SBATCH --job-name=NanoporeToBED
 #SBATCH --output=NanoporeToBED.out
@@ -11,7 +11,7 @@
 #SBATCH --time=72:00:00
 #SBATCH --account YourAccount
 
-VERSION="1.2.0"
+VERSION="1.2.1"
 
 # Environment
 cd $HOME
@@ -381,8 +381,9 @@ for sample_path in $sample_dirs; do
     start_time=$(date +%s)
 
     # Run modkit with error handling (show errors on screen)
+    # --modified-bases m = 5mC methylation
     if modkit pileup "$minimap_bam" "$methyl_bed" \
-      --cpg --ref "$ref_genome" -t ${THREADS} --combine-mods 2>&1 | tee -a "$sample_log"; then
+      --cpg --ref "$ref_genome" -t ${THREADS} --combine-mods --modified-bases m 2>&1 | tee -a "$sample_log"; then
       end_time=$(date +%s)
       elapsed=$((end_time - start_time))
       bed_size=$(du -h "$methyl_bed" | cut -f1)
