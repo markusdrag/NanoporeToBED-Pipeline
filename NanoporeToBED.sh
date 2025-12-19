@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # NanoporeToBED Pipeline
-# Version: 1.1.2 (2025-12-19)
+# Version: 1.2.0 (2025-12-19)
 
 #SBATCH --job-name=NanoporeToBED
 #SBATCH --output=NanoporeToBED.out
@@ -11,7 +11,7 @@
 #SBATCH --time=72:00:00
 #SBATCH --account YourAccount
 
-VERSION="1.1.2"
+VERSION="1.2.0"
 
 # Environment
 cd $HOME
@@ -35,6 +35,7 @@ file_size_bytes() {
 THREADS=40
 dry_run=false
 include_fail=false
+include_barcodes=false
 
 # Parse arguments
 while [[ "$#" -gt 0 ]]; do
@@ -45,8 +46,9 @@ while [[ "$#" -gt 0 ]]; do
     -t|--threads) THREADS="$2"; shift 2 ;;
     --dry-run) dry_run=true; shift ;;
     --include-fail) include_fail=true; shift ;;
+    --include-empty-barcodes) include_barcodes=true; shift ;;
     -h|--help)
-      echo "Usage: $0 -i <input_dir> -o <output_dir> -ref <reference_genome.fna> [-t <threads>] [--dry-run] [--include-fail]"
+      echo "Usage: $0 -i <input_dir> -o <output_dir> -ref <reference_genome.fna> [-t <threads>] [--dry-run] [--include-fail] [--include-empty-barcodes]"
       echo ""
       echo "Required arguments:"
       echo "  -i, --input       Input directory containing pass/fail subdirectories with barcoded samples"
@@ -54,18 +56,19 @@ while [[ "$#" -gt 0 ]]; do
       echo "  -ref, --reference Path to reference genome FASTA file"
       echo ""
       echo "Optional arguments:"
-      echo "  -t, --threads     Number of threads to use (default: 40)"
-      echo "  --dry-run         Run in test mode without processing"
-      echo "  --include-fail    Also process samples from fail/ directory (default: only pass/)"
-      echo "  -h, --help        Show this help message"
+      echo "  -t, --threads              Number of threads to use (default: 40)"
+      echo "  --dry-run                  Run in test mode without processing"
+      echo "  --include-fail             Also process samples from fail/ directory (default: only pass/)"
+      echo "  --include-empty-barcodes   Include barcode## directories (default: skip, only process named samples)"
+      echo "  -h, --help                 Show this help message"
       echo ""
       echo "Expected input structure:"
       echo "  input_dir/"
-      echo "  ├── pass/          <- processed by default"
-      echo "  │   ├── barcode01/"
-      echo "  │   │   └── *.bam"
-      echo "  │   └── barcode02/"
-      echo "  └── fail/          <- only with --include-fail"
+      echo "  ├── pass/              <- processed by default"
+      echo "  │   ├── barcode01/     <- skipped by default (use --include-empty-barcodes)"
+      echo "  │   ├── D01_SAMPLE/    <- processed (named samples)"
+      echo "  │   └── D02_SAMPLE/"
+      echo "  └── fail/              <- only with --include-fail"
       echo ""
       echo "Example:"
       echo "  $0 -i /data/nanopore/fastq_gpu_hac_mod -o /results -ref /ref/genome.fna -t 32"
@@ -192,6 +195,11 @@ for base_dir in $scan_dirs; do
       dir_name=$(basename "$sample_dir")
       # Skip unclassified, logs, and other non-sample directories
       if [[ "$dir_name" =~ ^(unclassified|logs|tmp)$ ]]; then
+        continue
+      fi
+      # Skip barcode## directories unless --include-empty-barcodes is set
+      if [[ "$include_barcodes" == false && "$dir_name" =~ ^barcode[0-9]+$ ]]; then
+        echo "    $dir_name: skipped (use --include-empty-barcodes to include)"
         continue
       fi
       # Check if directory contains BAM files
