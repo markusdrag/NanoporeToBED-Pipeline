@@ -131,56 +131,52 @@ echo "  ✓ Reference found: $ref_genome ($ref_size)"
 echo ""
 
 echo "Scanning for sample directories..."
+
+# Function to extract barcode number from BAM file
+get_barcode() {
+  local bam="$1"
+  local bc_full=$(samtools view "$bam" 2>/dev/null | head -1 | grep -oE 'barcode[0-9]+' || echo "")
+  if [[ -n "$bc_full" ]]; then
+    # Extract just the number and format as b## (e.g., barcode03 -> b03)
+    local bc_num=$(echo "$bc_full" | grep -oE '[0-9]+')
+    printf "b%02d" "$bc_num"
+  else
+    echo "b00"
+  fi
+}
+
+# Find all subdirectories containing BAM files
 sample_dirs=""
-for srr_dir in "$input_dir"/SRR*/fastq_gpu_hac_only_5mc_mod/pass/*-*_*_*_*/; do
-  if [[ -d "$srr_dir" && ! "$srr_dir" =~ unclassified ]]; then
-    sample_dirs="$sample_dirs$srr_dir"$'\n'
+for sample_dir in "$input_dir"/*/; do
+  if [[ -d "$sample_dir" ]]; then
+    # Check if directory contains BAM files
+    bam_count=$(find "$sample_dir" -maxdepth 1 -name '*.bam' 2>/dev/null | wc -l)
+    if [[ $bam_count -gt 0 ]]; then
+      # Skip unclassified directories
+      dir_name=$(basename "$sample_dir")
+      if [[ ! "$dir_name" =~ unclassified ]]; then
+        sample_dirs="$sample_dirs$sample_dir"$'\n'
+      fi
+    fi
   fi
 done
 
-# Also check for alternative directory structures
-if [[ -z "$sample_dirs" ]]; then
-  echo "  Checking alternative structure (direct pass folders)..."
-  for srr_dir in "$input_dir"/SRR*/pass/*_*/; do
-    if [[ -d "$srr_dir" && ! "$srr_dir" =~ unclassified ]]; then
-      sample_dirs="$sample_dirs$srr_dir"$'\n'
-    fi
-  done
-fi
-
-sample_dirs=$(echo "$sample_dirs" | sort)
+sample_dirs=$(echo "$sample_dirs" | grep -v '^$' | sort)
 
 if [[ -z "$sample_dirs" ]]; then
-  echo "❌ ERROR: No sample directories found matching pattern"
+  echo "❌ ERROR: No sample directories found containing BAM files"
   echo ""
   echo "Searched in: $input_dir"
-  echo "Looking for patterns:"
-  echo "  1. SRR*/fastq_gpu_hac_only_5mc_mod/pass/*_*/"
-  echo "  2. SRR*/pass/*_*/"
+  echo "Looking for: subdirectories containing *.bam files"
   echo ""
   echo "Please check:"
   echo "  1. Input directory is correct"
-  echo "  2. Sample directories exist in pass/ folders"
-  echo "  3. Sample names contain underscores for metadata separation"
+  echo "  2. Sample directories contain BAM files directly"
   exit 1
 fi
 
 sample_count=$(echo "$sample_dirs" | wc -l)
 echo "✓ Found $sample_count sample(s) to process"
-echo ""
-
-# Group by SRR code for summary
-declare -A srr_counts
-for sample_path in $sample_dirs; do
-  rel_path=$(realpath --relative-to="$input_dir" "$sample_path")
-  srr_code=$(echo "$rel_path" | cut -d'/' -f1)
-  srr_counts[$srr_code]=$((${srr_counts[$srr_code]:-0} + 1))
-done
-
-echo "Sample distribution by library:"
-for srr in "${!srr_counts[@]}"; do
-  echo "  $srr: ${srr_counts[$srr]} sample(s)"
-done | sort
 echo ""
 
 if [[ "$dry_run" == true ]]; then
@@ -196,33 +192,35 @@ for sample_path in $sample_dirs; do
   sample_num=$((sample_num + 1))
 
   # Extract sample information
-  sample_name=$(basename "$sample_path")
-  rel_path=$(realpath --relative-to="$input_dir" "$sample_path")
-  srr_code=$(echo "$rel_path" | cut -d'/' -f1)
-
-  # Try to extract date from path (if present)
-  if [[ "$rel_path" =~ ([0-9]{8}|[0-9]{4}-[0-9]{2}-[0-9]{2}) ]]; then
-    date_code="${BASH_REMATCH[1]}"
+  input_dir_name=$(basename "$sample_path")
+  
+  # Get first BAM file to extract barcode
+  first_bam=$(find "$sample_path" -maxdepth 1 -name '*.bam' 2>/dev/null | head -1)
+  if [[ -n "$first_bam" ]]; then
+    barcode=$(get_barcode "$first_bam")
   else
-    date_code=$(echo "$rel_path" | cut -d'/' -f2)
+    barcode="b00"
   fi
+  
+  # Create sample name with barcode suffix (e.g., L07_HUMB_LAB_b03)
+  sample_name="${input_dir_name}_${barcode}"
 
   echo "=========================================="
   echo "Sample $sample_num of $sample_count"
   echo "=========================================="
+  echo "Input dir:     $input_dir_name"
+  echo "Barcode:       $barcode"
   echo "Sample ID:     $sample_name"
-  echo "Library (SRR): $srr_code"
-  echo "Date:          $date_code"
   echo "Input path:    $sample_path"
   echo "Threads:       $THREADS"
   echo ""
 
-  # Create output directory
-  out_sample_dir="$output_dir/$srr_code/$date_code/$sample_name"
+  # Create output directory (flat structure)
+  out_sample_dir="$output_dir/$sample_name"
   mkdir -p "$out_sample_dir"
-  mkdir -p "$output_dir/logs/$srr_code/$date_code"
+  mkdir -p "$output_dir/logs"
 
-  sample_log="$output_dir/logs/$srr_code/$date_code/${sample_name}.log"
+  sample_log="$output_dir/logs/${sample_name}.log"
 
   echo "Output dir:    $out_sample_dir"
   echo "Sample log:    $sample_log"
@@ -377,11 +375,6 @@ echo "Processed: $sample_count sample(s)"
 echo "Threads used: $THREADS"
 echo "Output directory: $output_dir"
 echo "Master log: $log_file"
-echo ""
-echo "Summary by library:"
-for srr in "${!srr_counts[@]}"; do
-  echo "  $srr: ${srr_counts[$srr]} sample(s)"
-done | sort
 echo ""
 echo "Citation: Drag et al. (2025) bioRxiv 2025.04.11.648151"
 echo "🎉 All done!"
