@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# NanoporeToBED Pipeline
+# Version: 1.1.0 (2025-12-19)
+
 #SBATCH --job-name=NanoporeToBED
 #SBATCH --output=NanoporeToBED.out
 #SBATCH --error=NanoporeToBED.err
@@ -7,6 +10,8 @@
 #SBATCH --mem 192g
 #SBATCH --time=72:00:00
 #SBATCH --account YourAccount
+
+VERSION="1.1.0"
 
 # Environment
 cd $HOME
@@ -95,7 +100,7 @@ fi
 timestamp=$(date +%Y%m%d_%H%M%S)
 
 echo "=========================================="
-echo "NanoporeToBED Pipeline"
+echo "NanoporeToBED Pipeline v${VERSION}"
 echo "=========================================="
 echo "Started at: $(date)"
 echo ""
@@ -241,8 +246,8 @@ for sample_path in $sample_dirs; do
   # Extract sample information
   input_dir_name=$(basename "$sample_path")
   
-  # Get first BAM file to extract barcode
-  first_bam=$(find "$sample_path" -maxdepth 1 -name '*.bam' 2>/dev/null | head -1)
+  # Get first BAM file to extract barcode (disable pipefail to avoid SIGPIPE)
+  first_bam=$(set +o pipefail; find "$sample_path" -maxdepth 1 -name '*.bam' 2>/dev/null | head -1 || true)
   if [[ -n "$first_bam" ]]; then
     barcode=$(get_barcode "$first_bam")
   else
