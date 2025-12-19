@@ -29,6 +29,7 @@ file_size_bytes() {
 # Default values
 THREADS=40
 dry_run=false
+include_fail=false
 
 # Parse arguments
 while [[ "$#" -gt 0 ]]; do
@@ -38,21 +39,31 @@ while [[ "$#" -gt 0 ]]; do
     -ref|--reference) ref_genome="$2"; shift 2 ;;
     -t|--threads) THREADS="$2"; shift 2 ;;
     --dry-run) dry_run=true; shift ;;
+    --include-fail) include_fail=true; shift ;;
     -h|--help)
-      echo "Usage: $0 -i <input_dir> -o <output_dir> -ref <reference_genome.fna> [-t <threads>] [--dry-run]"
+      echo "Usage: $0 -i <input_dir> -o <output_dir> -ref <reference_genome.fna> [-t <threads>] [--dry-run] [--include-fail]"
       echo ""
       echo "Required arguments:"
-      echo "  -i, --input       Input directory containing SRR folders"
+      echo "  -i, --input       Input directory containing pass/fail subdirectories with barcoded samples"
       echo "  -o, --output      Output directory for processed data"
       echo "  -ref, --reference Path to reference genome FASTA file"
       echo ""
       echo "Optional arguments:"
       echo "  -t, --threads     Number of threads to use (default: 40)"
       echo "  --dry-run         Run in test mode without processing"
+      echo "  --include-fail    Also process samples from fail/ directory (default: only pass/)"
       echo "  -h, --help        Show this help message"
       echo ""
+      echo "Expected input structure:"
+      echo "  input_dir/"
+      echo "  ├── pass/          <- processed by default"
+      echo "  │   ├── barcode01/"
+      echo "  │   │   └── *.bam"
+      echo "  │   └── barcode02/"
+      echo "  └── fail/          <- only with --include-fail"
+      echo ""
       echo "Example:"
-      echo "  $0 -i /data/nanopore -o /results -ref /ref/genome.fna -t 32"
+      echo "  $0 -i /data/nanopore/fastq_gpu_hac_mod -o /results -ref /ref/genome.fna -t 32"
       exit 0
       ;;
     *) echo "Unknown option: $1"; echo "Use -h for help"; exit 1 ;;
@@ -145,24 +156,45 @@ get_barcode() {
   fi
 }
 
-# Debug: show what we're looking for
-echo "  Looking in: $input_dir"
+# Determine which directories to scan
+echo "  Include fail directory: $include_fail"
 
-# Find all subdirectories containing BAM files
+# Build list of base directories to scan
+scan_dirs=""
+if [[ -d "$input_dir/pass" ]]; then
+  scan_dirs="$input_dir/pass"
+  echo "  Found pass/ directory"
+fi
+if [[ "$include_fail" == true && -d "$input_dir/fail" ]]; then
+  scan_dirs="$scan_dirs $input_dir/fail"
+  echo "  Including fail/ directory"
+fi
+
+# If no pass/fail structure, try scanning input_dir directly
+if [[ -z "$scan_dirs" ]]; then
+  echo "  No pass/fail structure found, scanning input directory directly"
+  scan_dirs="$input_dir"
+fi
+
+# Find all sample subdirectories containing BAM files
 sample_dirs=""
-for sample_dir in "$input_dir"/*/; do
-  if [[ -d "$sample_dir" ]]; then
-    dir_name=$(basename "$sample_dir")
-    # Check if directory contains BAM files (recursively)
-    bam_count=$(find "$sample_dir" -name '*.bam' 2>/dev/null | wc -l | tr -d ' ')
-    echo "  Checking: $dir_name -> $bam_count BAM files"
-    if [[ "$bam_count" -gt 0 ]]; then
-      # Skip unclassified directories
-      if [[ ! "$dir_name" =~ unclassified ]]; then
+for base_dir in $scan_dirs; do
+  echo "  Scanning: $base_dir"
+  for sample_dir in "$base_dir"/*/; do
+    if [[ -d "$sample_dir" ]]; then
+      dir_name=$(basename "$sample_dir")
+      # Skip unclassified, logs, and other non-sample directories
+      if [[ "$dir_name" =~ ^(unclassified|logs|tmp)$ ]]; then
+        continue
+      fi
+      # Check if directory contains BAM files
+      bam_count=$(find "$sample_dir" -maxdepth 1 -name '*.bam' 2>/dev/null | wc -l | tr -d ' ')
+      if [[ "$bam_count" -gt 0 ]]; then
+        echo "    $dir_name: $bam_count BAM files"
         sample_dirs="$sample_dirs$sample_dir"$'\n'
       fi
     fi
-  fi
+  done
 done
 
 sample_dirs=$(echo "$sample_dirs" | grep -v '^$' | sort)
@@ -172,14 +204,20 @@ if [[ -z "$sample_dirs" ]]; then
   echo "❌ ERROR: No sample directories found containing BAM files"
   echo ""
   echo "Searched in: $input_dir"
-  echo "Looking for: subdirectories containing *.bam files"
+  echo "Expected structure: pass/<barcode_dirs>/*.bam"
   echo ""
   echo "Directory contents:"
   ls -la "$input_dir" | head -20
+  if [[ -d "$input_dir/pass" ]]; then
+    echo ""
+    echo "Contents of pass/:"
+    ls -la "$input_dir/pass" | head -10
+  fi
   echo ""
   echo "Please check:"
   echo "  1. Input directory is correct"
-  echo "  2. Sample directories contain BAM files"
+  echo "  2. pass/ directory exists with barcode subdirectories"
+  echo "  3. BAM files are directly in barcode directories"
   exit 1
 fi
 

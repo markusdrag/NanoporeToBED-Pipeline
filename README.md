@@ -37,28 +37,26 @@ guppy_basecaller --disable_pings --compress_fastq \
 
 ### Expected Input Directory Structure
 ```
-input_dir/
-├── SRR000001/
-│   └── fastq_gpu_hac_only_5mc_mod/
-│       └── pass/
-│           ├── sample1_metadata_info/
-│           │   ├── *.bam           # Modified BAM files with MM/ML tags
-│           │   └── *.fastq.gz      # FASTQ files (optional)
-│           └── sample2_metadata_info/
-│               ├── *.bam
-│               └── *.fastq.gz
-├── SRR000002/
-│   └── fastq_gpu_hac_only_5mc_mod/
-│       └── pass/
-│           └── sample3_metadata_info/
-│               └── *.bam
-└── ...
+fastq_gpu_hac_mod/
+├── pass/                           # Passed QC reads (processed by default)
+│   ├── barcode01/                  # Sample directory (any naming)
+│   │   └── *.bam                   # Modified BAM files with MM/ML tags
+│   ├── barcode02/
+│   │   └── *.bam
+│   └── barcode03/
+│       └── *.bam
+├── fail/                           # Failed QC reads (optional, use --include-fail)
+│   ├── barcode01/
+│   │   └── *.bam
+│   └── ...
+└── logs/                           # Ignored
 ```
 
 **Directory structure notes:**
-- Top level: SRR codes (sequencing run identifiers)
-- Second level: Date or run identifier (automatically extracted from directory structure)
-- Sample directories: Any naming convention with metadata separated by underscores
+- The pipeline looks for `pass/` subdirectory by default
+- Sample directories can have any name (barcode01, sample_name, etc.)
+- Barcode information is extracted from BAM file headers, not directory names
+- Output sample names are formatted as: `<input_dir_name>_b##` (e.g., `L07_HUMB_LAB_b03`)
 
 ## Installation
 
@@ -187,32 +185,33 @@ sbatch NanoporeToBED.sh \
 
 ### Basic Command
 ```bash
-sbatch NanoporeToBED.sh \
+bash NanoporeToBED.sh \
   -i /data/nanopore/fastq_gpu_hac_mod \
   -o /data/nanopore/methylation_results \
   -ref /data/references/genome.fna \
   -t 40
 ```
 
-Where the input directory should contain your SRR folders from the Guppy output:
+Where the input directory should contain your `pass/` folder from Guppy output:
 ```
 /data/nanopore/fastq_gpu_hac_mod/
-├── SRR000001/
-│   └── fastq_gpu_hac_only_5mc_mod/pass/
-├── SRR000002/
-│   └── fastq_gpu_hac_only_5mc_mod/pass/
-└── ...
+├── pass/
+│   ├── barcode01/
+│   ├── barcode02/
+│   └── ...
+└── fail/           # Optional, use --include-fail to process
 ```
 
 ### Parameters
 
 | Flag | Long Form | Description | Required | Default |
 |------|-----------|-------------|----------|---------|
-| `-i` | `--input` | Input directory containing SRR folders with barcoded samples | Yes | - |
+| `-i` | `--input` | Input directory containing pass/fail folders with barcoded samples | Yes | - |
 | `-o` | `--output` | Output directory for processed data | Yes | - |
 | `-ref` | `--reference` | Path to reference genome FASTA file (.fna, .fa, or .fasta) | Yes | - |
 | `-t` | `--threads` | Number of threads to use for processing | No | 40 |
 | | `--dry-run` | Run in test mode without processing | No | false |
+| | `--include-fail` | Also process samples from fail/ directory | No | false |
 | `-h` | `--help` | Show help message | No | - |
 
 ### Reference Genome Format
@@ -226,30 +225,23 @@ The reference genome should be a single FASTA file:
 
 ```
 output_dir/
-├── SRR000001/
-│   ├── 20240315/                              # Date folder
-│   │   ├── sample1_metadata_info/
-│   │   │   ├── sample1_metadata_info.merged.bam         # Merged BAM
-│   │   │   ├── sample1_metadata_info.merged.bam.bai
-│   │   │   ├── sample1_metadata_info.minimap.bam        # Aligned BAM
-│   │   │   ├── sample1_metadata_info.minimap.bam.bai
-│   │   │   ├── sample1_metadata_info.CpG.bed           # Methylation calls
-│   │   │   ├── qualimap/                               # QC reports
-│   │   │   │   ├── qualimapReport.html
-│   │   │   │   ├── genome_results.txt
-│   │   │   │   └── raw_data_qualimapReport/
-│   │   │   └── bam_list.txt                            # Processing manifest
-│   │   └── sample2_metadata_info/
-│   │       └── ...
-├── SRR000002/
+├── L07_HUMB_LAB_b03/                         # Sample directory (name_barcode)
+│   ├── L07_HUMB_LAB_b03.merged.bam           # Merged BAM with methylation tags
+│   ├── L07_HUMB_LAB_b03.merged.bam.bai
+│   ├── L07_HUMB_LAB_b03.minimap.bam          # Aligned BAM
+│   ├── L07_HUMB_LAB_b03.minimap.bam.bai
+│   ├── L07_HUMB_LAB_b03.CpG.bed              # Methylation calls
+│   ├── qualimap/                              # QC reports
+│   │   ├── qualimapReport.html
+│   │   ├── genome_results.txt
+│   │   └── raw_data_qualimapReport/
+│   └── bam_list.txt                           # Processing manifest
+├── L08_HUMB_FIELD_b05/
 │   └── ...
 └── logs/
-    ├── pipeline_master_log_YYYYMMDD_HHMMSS.txt        # Master pipeline log
-    ├── SRR000001/
-    │   └── 20240315/
-    │       ├── sample1_metadata_info.log               # Sample-specific log
-    │       └── sample2_metadata_info.log
-    └── ...
+    ├── pipeline_master_log_YYYYMMDD_HHMMSS.txt
+    ├── L07_HUMB_LAB_b03.log
+    └── L08_HUMB_FIELD_b05.log
 ```
 
 ### Output File Descriptions
