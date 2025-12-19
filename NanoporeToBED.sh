@@ -11,9 +11,20 @@
 # Environment
 cd $HOME
 source ~/.bashrc
-micromamba activate nanopore_methylation
+micromamba activate nanopore_methylation 2>/dev/null || \
+  conda activate nanopore_methylation 2>/dev/null || \
+  echo "Warning: Could not activate nanopore_methylation environment"
 
 set -euo pipefail
+
+# Portable file size function (works on Linux and macOS)
+file_size_bytes() {
+  if [[ "$(uname)" == "Darwin" ]]; then
+    stat -f%z "$1" 2>/dev/null || echo 0
+  else
+    stat -c%s "$1" 2>/dev/null || echo 0
+  fi
+}
 
 # Default values
 THREADS=40
@@ -108,6 +119,7 @@ echo "  ✓ Master log: $log_file"
 echo ""
 
 # Log everything to file as well
+# Using exec with tee for logging (requires bash)
 exec > >(tee -a "$log_file") 2>&1
 
 echo "Checking reference genome..."
@@ -227,7 +239,7 @@ for sample_path in $sample_dirs; do
   echo "Step 1/4: Merging BAM files with methylation tags"
   merged_bam="$out_sample_dir/${sample_name}.merged.bam"
 
-  if [[ -s "$merged_bam" && $(stat -c%s "$merged_bam") -gt 100000000 ]]; then
+  if [[ -s "$merged_bam" && $(file_size_bytes "$merged_bam") -gt 100000000 ]]; then
     merged_size=$(du -h "$merged_bam" | cut -f1)
     echo "  ✓ Already exists: $merged_bam ($merged_size)"
   else
@@ -271,7 +283,7 @@ for sample_path in $sample_dirs; do
   echo "Step 2/4: Aligning reads with minimap2"
   minimap_bam="$out_sample_dir/${sample_name}.minimap.bam"
 
-  if [[ -s "$minimap_bam" && $(stat -c%s "$minimap_bam") -gt 100000000 ]]; then
+  if [[ -s "$minimap_bam" && $(file_size_bytes "$minimap_bam") -gt 100000000 ]]; then
     bam_size=$(du -h "$minimap_bam" | cut -f1)
     echo "  ✓ Already exists: $minimap_bam ($bam_size)"
   else
@@ -301,7 +313,7 @@ for sample_path in $sample_dirs; do
   echo "Step 3/4: Calling methylation with modkit"
   methyl_bed="$out_sample_dir/${sample_name}.CpG.bed"
 
-  if [[ -s "$methyl_bed" && $(stat -c%s "$methyl_bed") -gt 100000 ]]; then
+  if [[ -s "$methyl_bed" && $(file_size_bytes "$methyl_bed") -gt 100000 ]]; then
     bed_size=$(du -h "$methyl_bed" | cut -f1)
     echo "  ✓ Already exists: $methyl_bed ($bed_size)"
   else
