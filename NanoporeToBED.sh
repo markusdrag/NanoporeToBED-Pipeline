@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # NanoporeToBED Pipeline
-# Version: 1.1.1 (2025-12-19)
+# Version: 1.1.2 (2025-12-19)
 
 #SBATCH --job-name=NanoporeToBED
 #SBATCH --output=NanoporeToBED.out
@@ -11,7 +11,7 @@
 #SBATCH --time=72:00:00
 #SBATCH --account YourAccount
 
-VERSION="1.1.1"
+VERSION="1.1.2"
 
 # Environment
 cd $HOME
@@ -372,15 +372,19 @@ for sample_path in $sample_dirs; do
     echo "    Threads: $THREADS"
     start_time=$(date +%s)
 
-    modkit pileup "$minimap_bam" "$methyl_bed" \
-      --cpg --ref "$ref_genome" -t ${THREADS} --combine-mods 2>>"$sample_log"
-
-    end_time=$(date +%s)
-    elapsed=$((end_time - start_time))
-    bed_size=$(du -h "$methyl_bed" | cut -f1)
-
-    echo "  ✓ Methylation calling complete ($elapsed seconds)"
-    echo "    Output: $methyl_bed ($bed_size)"
+    # Run modkit with error handling (show errors on screen)
+    if modkit pileup "$minimap_bam" "$methyl_bed" \
+      --cpg --ref "$ref_genome" -t ${THREADS} --combine-mods 2>&1 | tee -a "$sample_log"; then
+      end_time=$(date +%s)
+      elapsed=$((end_time - start_time))
+      bed_size=$(du -h "$methyl_bed" | cut -f1)
+      echo "  ✓ Methylation calling complete ($elapsed seconds)"
+      echo "    Output: $methyl_bed ($bed_size)"
+    else
+      echo "  ⚠️  modkit pileup failed - check sample log for details"
+      echo "  Continuing to next sample..."
+      continue
+    fi
   fi
   echo ""
 
