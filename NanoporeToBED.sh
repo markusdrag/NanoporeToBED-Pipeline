@@ -118,9 +118,8 @@ echo "  ✓ Created: $output_dir/logs"
 echo "  ✓ Master log: $log_file"
 echo ""
 
-# Log everything to file as well
-# Using exec with tee for logging (requires bash)
-exec > >(tee -a "$log_file") 2>&1
+# Simple logging - append output to log file
+# Note: For full logging, run as: bash script.sh 2>&1 | tee logfile.txt
 
 echo "Checking reference genome..."
 if [[ ! -f "$ref_genome" ]]; then
