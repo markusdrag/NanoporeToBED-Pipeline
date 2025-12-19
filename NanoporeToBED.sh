@@ -145,15 +145,19 @@ get_barcode() {
   fi
 }
 
+# Debug: show what we're looking for
+echo "  Looking in: $input_dir"
+
 # Find all subdirectories containing BAM files
 sample_dirs=""
 for sample_dir in "$input_dir"/*/; do
   if [[ -d "$sample_dir" ]]; then
-    # Check if directory contains BAM files
-    bam_count=$(find "$sample_dir" -maxdepth 1 -name '*.bam' 2>/dev/null | wc -l)
-    if [[ $bam_count -gt 0 ]]; then
+    dir_name=$(basename "$sample_dir")
+    # Check if directory contains BAM files (recursively)
+    bam_count=$(find "$sample_dir" -name '*.bam' 2>/dev/null | wc -l | tr -d ' ')
+    echo "  Checking: $dir_name -> $bam_count BAM files"
+    if [[ "$bam_count" -gt 0 ]]; then
       # Skip unclassified directories
-      dir_name=$(basename "$sample_dir")
       if [[ ! "$dir_name" =~ unclassified ]]; then
         sample_dirs="$sample_dirs$sample_dir"$'\n'
       fi
@@ -164,14 +168,18 @@ done
 sample_dirs=$(echo "$sample_dirs" | grep -v '^$' | sort)
 
 if [[ -z "$sample_dirs" ]]; then
+  echo ""
   echo "❌ ERROR: No sample directories found containing BAM files"
   echo ""
   echo "Searched in: $input_dir"
   echo "Looking for: subdirectories containing *.bam files"
   echo ""
+  echo "Directory contents:"
+  ls -la "$input_dir" | head -20
+  echo ""
   echo "Please check:"
   echo "  1. Input directory is correct"
-  echo "  2. Sample directories contain BAM files directly"
+  echo "  2. Sample directories contain BAM files"
   exit 1
 fi
 
