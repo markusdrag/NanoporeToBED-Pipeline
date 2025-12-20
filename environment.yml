@@ -11,3 +11,9 @@ dependencies:
   - qualimap>=2.3
   - pigz
   - parallel
+  # R and packages for summary plots
+  - r-base>=4.0
+  - r-ggplot2
+  - r-dplyr
+  - r-tidyr
+  - r-scales
