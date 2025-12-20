@@ -321,13 +321,13 @@ if (!all(is.na(results$total_reads))) {
 
 # Create a faceted plot with free scales for each metric
 results_long <- results %>%
-  select(sample, cpg_sites, mean_methylation, mean_coverage) %>%
+  select(sample, cpg_sites, mean_methylation, total_reads) %>%
   mutate(
     `CpG Sites` = cpg_sites,
     `Methylation (%)` = mean_methylation * 100,
-    `Mean Coverage` = mean_coverage
+    `Total Reads` = total_reads
   ) %>%
-  select(sample, `CpG Sites`, `Methylation (%)`, `Mean Coverage`) %>%
+  select(sample, `CpG Sites`, `Methylation (%)`, `Total Reads`) %>%
   pivot_longer(cols = -sample, names_to = "Metric", values_to = "Value")
 
 # Check if we have valid data for the faceted plot
@@ -338,7 +338,7 @@ if (any(!is.na(results_long$Value))) {
     scale_fill_manual(values = c(
       "CpG Sites" = "#4e79a7",
       "Methylation (%)" = "#e15759",
-      "Mean Coverage" = "#59a14f"
+      "Total Reads" = "#76b7b2"
     )) +
     labs(
       title = "Sample Quality Metrics Overview",
