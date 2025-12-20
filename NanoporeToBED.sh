@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # NanoporeToBED Pipeline
-# Version: 1.4.0 (2025-12-19)
+# Version: 1.4.1
 
 #SBATCH --job-name=NanoporeToBED
 #SBATCH --output=NanoporeToBED.out
@@ -11,7 +11,7 @@
 #SBATCH --time=72:00:00
 #SBATCH --account YourAccount
 
-VERSION="1.4.0"
+VERSION="1.4.1"
 
 # Environment
 cd $HOME
@@ -136,8 +136,8 @@ echo ""
 echo "Creating output directory structure..."
 mkdir -p "$output_dir/logs"
 log_file="$output_dir/logs/pipeline_master_log_${timestamp}.txt"
-echo "  ✓ Created: $output_dir/logs"
-echo "  ✓ Master log: $log_file"
+echo "  [OK] Created: $output_dir/logs"
+echo "  [OK] Master log: $log_file"
 echo ""
 
 # Simple logging - append output to log file
@@ -145,11 +145,11 @@ echo ""
 
 echo "Checking reference genome..."
 if [[ ! -f "$ref_genome" ]]; then
-  echo "❌ ERROR: Reference genome not found: $ref_genome"
+  echo "[ERROR] ERROR: Reference genome not found: $ref_genome"
   exit 1
 fi
 ref_size=$(du -h "$ref_genome" | cut -f1)
-echo "  ✓ Reference found: $ref_genome ($ref_size)"
+echo "  [OK] Reference found: $ref_genome ($ref_size)"
 echo ""
 
 echo "Scanning for sample directories..."
@@ -219,7 +219,7 @@ sample_dirs=$(echo "$sample_dirs" | grep -v '^$' | sort)
 
 if [[ -z "$sample_dirs" ]]; then
   echo ""
-  echo "❌ ERROR: No sample directories found containing BAM files"
+  echo "[ERROR] ERROR: No sample directories found containing BAM files"
   echo ""
   echo "Searched in: $input_dir"
   echo "Expected structure: pass/<barcode_dirs>/*.bam"
@@ -240,7 +240,7 @@ if [[ -z "$sample_dirs" ]]; then
 fi
 
 sample_count=$(echo "$sample_dirs" | wc -l)
-echo "✓ Found $sample_count sample(s) to process"
+echo "[OK] Found $sample_count sample(s) to process"
 echo ""
 
 if [[ "$dry_run" == true ]]; then
@@ -302,7 +302,7 @@ for sample_path in $sample_dirs; do
 
   if [[ -s "$merged_bam" && $(file_size_bytes "$merged_bam") -gt 100000000 ]]; then
     merged_size=$(du -h "$merged_bam" | cut -f1)
-    echo "  ✓ Already exists: $merged_bam ($merged_size)"
+    echo "  [OK] Already exists: $merged_bam ($merged_size)"
   else
     echo "  Searching for BAM files..."
     temp_bam_list="$out_sample_dir/bam_list.txt"
@@ -312,7 +312,7 @@ for sample_path in $sample_dirs; do
     echo "    Found: $bam_count BAM files"
 
     if [[ $bam_count -eq 0 ]]; then
-      echo "  ⚠️  WARNING: No BAM files found - skipping this sample"
+      echo "  [WARN]  WARNING: No BAM files found - skipping this sample"
       echo ""
       continue
     fi
@@ -321,7 +321,7 @@ for sample_path in $sample_dirs; do
     {
       read firstbam
       if ! samtools view -@${THREADS} -H "$firstbam" > /dev/null 2>>"$sample_log"; then
-        echo "  ❌ BAM header problem in $firstbam" | tee -a "$sample_log"
+        echo "  [ERROR] BAM header problem in $firstbam" | tee -a "$sample_log"
         continue
       fi
       samtools view -@${THREADS} -h "$firstbam"
@@ -329,14 +329,14 @@ for sample_path in $sample_dirs; do
         if samtools view -@${THREADS} "$bam" > /dev/null 2>>"$sample_log"; then
           samtools view -@${THREADS} "$bam"
         else
-          echo "  ⚠️  Corrupt BAM: $bam" | tee -a "$sample_log"
+          echo "  [WARN]  Corrupt BAM: $bam" | tee -a "$sample_log"
         fi
       done
     } < "$temp_bam_list" | samtools view -@${THREADS} -ubS - | samtools sort -@${THREADS} -o "$merged_bam" -
 
     samtools index -@${THREADS} "$merged_bam"
     merged_size=$(du -h "$merged_bam" | cut -f1)
-    echo "  ✓ BAMs merged: $merged_bam ($merged_size)"
+    echo "  [OK] BAMs merged: $merged_bam ($merged_size)"
   fi
   echo ""
 
@@ -346,7 +346,7 @@ for sample_path in $sample_dirs; do
 
   if [[ -s "$minimap_bam" && $(file_size_bytes "$minimap_bam") -gt 100000000 ]]; then
     bam_size=$(du -h "$minimap_bam" | cut -f1)
-    echo "  ✓ Already exists: $minimap_bam ($bam_size)"
+    echo "  [OK] Already exists: $minimap_bam ($bam_size)"
   else
     echo "  Running minimap2 alignment (preserving methylation tags)..."
     echo "    Threads: $THREADS"
@@ -365,7 +365,7 @@ for sample_path in $sample_dirs; do
     elapsed=$((end_time - start_time))
     bam_size=$(du -h "$minimap_bam" | cut -f1)
 
-    echo "  ✓ Alignment complete ($elapsed seconds)"
+    echo "  [OK] Alignment complete ($elapsed seconds)"
     echo "    Output: $minimap_bam ($bam_size)"
   fi
   echo ""
@@ -376,7 +376,7 @@ for sample_path in $sample_dirs; do
 
   if [[ -s "$methyl_bed" && $(file_size_bytes "$methyl_bed") -gt 100000 ]]; then
     bed_size=$(du -h "$methyl_bed" | cut -f1)
-    echo "  ✓ Already exists: $methyl_bed ($bed_size)"
+    echo "  [OK] Already exists: $methyl_bed ($bed_size)"
   else
     echo "  Running modkit pileup..."
     echo "    Mode: CpG methylation"
@@ -390,10 +390,10 @@ for sample_path in $sample_dirs; do
       end_time=$(date +%s)
       elapsed=$((end_time - start_time))
       bed_size=$(du -h "$methyl_bed" | cut -f1)
-      echo "  ✓ Methylation calling complete ($elapsed seconds)"
+      echo "  [OK] Methylation calling complete ($elapsed seconds)"
       echo "    Output: $methyl_bed ($bed_size)"
     else
-      echo "  ⚠️  modkit pileup failed - check sample log for details"
+      echo "  [WARN]  modkit pileup failed - check sample log for details"
       echo "  Continuing to next sample..."
       continue
     fi
@@ -405,7 +405,7 @@ for sample_path in $sample_dirs; do
   qualimap_dir="$out_sample_dir/qualimap"
 
   if [[ -f "$qualimap_dir/qualimapReport.html" ]]; then
-    echo "  ✓ Already exists: $qualimap_dir/qualimapReport.html"
+    echo "  [OK] Already exists: $qualimap_dir/qualimapReport.html"
   else
     echo "  Running Qualimap bamqc..."
     echo "    Window size: 5000"
@@ -425,12 +425,12 @@ for sample_path in $sample_dirs; do
     end_time=$(date +%s)
     elapsed=$((end_time - start_time))
 
-    echo "  ✓ QC complete ($elapsed seconds)"
+    echo "  [OK] QC complete ($elapsed seconds)"
     echo "    Report: $qualimap_dir/qualimapReport.html"
   fi
   echo ""
 
-  echo "✅ Sample $sample_name complete!"
+  echo "[OK] Sample $sample_name complete!"
   echo ""
 
 done
@@ -464,14 +464,14 @@ if [[ -f "$SUMMARY_SCRIPT" ]]; then
       Rscript "$SUMMARY_SCRIPT" "$output_dir" 2>&1 | tee -a "$log_file"
     fi
   else
-    echo "⚠️  Rscript not found - skipping summary report"
+    echo "[WARN]  Rscript not found - skipping summary report"
     echo "   To generate summary, run: Rscript generate_summary.R $output_dir"
   fi
 else
-  echo "⚠️  generate_summary.R not found in $SCRIPT_DIR"
+  echo "[WARN]  generate_summary.R not found in $SCRIPT_DIR"
   echo "   Download from: https://github.com/markusdrag/NanoporeToBED-Pipeline"
 fi
 
 echo ""
 echo "Citation: Drag et al. (2025) bioRxiv 2025.04.11.648151"
-echo "🎉 All done!"
+echo "--- All done!"

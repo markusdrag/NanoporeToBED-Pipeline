@@ -9,7 +9,7 @@ set -e
 echo "=========================================="
 echo "NanoporeToBED - Intelligent Setup"
 echo "=========================================="
-echo "Version: 1.4.0"
+echo "Version: 1.4.1"
 echo "Pipeline: Drag et al. (2025) bioRxiv"
 echo ""
 
@@ -506,7 +506,7 @@ check_tool() {
 
     if command -v $tool &> /dev/null; then
         local version=$($check_cmd 2>&1 | head -n1 || echo "version unknown")
-        echo "  [✓] $tool: $version"
+        echo "  [[OK]] $tool: $version"
         INSTALLED_TOOLS+=("$tool")
         return 0
     else
@@ -530,7 +530,7 @@ check_tool parallel "parallel --version"
 
 # Special check for qualimap (Java-based)
 if command -v qualimap &> /dev/null; then
-    echo "  [✓] qualimap: installed"
+    echo "  [[OK]] qualimap: installed"
     INSTALLED_TOOLS+=("qualimap")
 else
     echo "  [✗] qualimap: NOT FOUND"
@@ -775,17 +775,17 @@ if [[ "$PLATFORM_TYPE" == "macos_arm64" ]]; then
     echo "=========================================="
     echo ""
     if [[ "$INSTALL_METHOD" == "1" ]]; then
-        echo "✓ Using native ARM64 for best performance"
-        echo "✓ pip installed modkit and Python packages"
+        echo "[OK] Using native ARM64 for best performance"
+        echo "[OK] pip installed modkit and Python packages"
         if [ ${#MISSING_TOOLS[@]} -gt 0 ]; then
-            echo "⚠ Some tools missing - see options above"
+            echo "[WARN] Some tools missing - see options above"
         fi
     elif [[ "$INSTALL_METHOD" == "2" ]]; then
-        echo "✓ Running via Rosetta 2 for full compatibility"
+        echo "[OK] Running via Rosetta 2 for full compatibility"
         echo "ℹ First tool execution may be slightly slower"
     else
-        echo "✓ Minimal environment ready"
-        echo "⚠ Remember to set up Docker for analysis tools"
+        echo "[OK] Minimal environment ready"
+        echo "[WARN] Remember to set up Docker for analysis tools"
     fi
     echo ""
 fi

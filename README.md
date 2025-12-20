@@ -1,7 +1,7 @@
 <div align="center">
   <img src="nanoporetobed_logo.png" alt="NanoporeToBED Pipeline Logo" width="500">
   
-  **Version 1.4.0**
+  **Version 1.4.1**
 </div>
 
 #

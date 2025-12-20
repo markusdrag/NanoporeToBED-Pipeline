@@ -1,4 +1,4 @@
-# NanoporeToBED Pipeline v1.4.0
+# NanoporeToBED Pipeline v1.4.1
 name: nanopore_methylation
 channels:
   - conda-forge

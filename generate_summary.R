@@ -1,7 +1,7 @@
 #!/usr/bin/env Rscript
 
 # NanoporeToBED Pipeline - Summary Statistics and Plots
-# Version: 1.4.0
+# Version: 1.4.1
 # Author: Markus Hodal Drag
 
 suppressPackageStartupMessages({
@@ -286,7 +286,7 @@ if (any(!is.na(results$cpg_sites) & results$cpg_sites > 0)) {
 
   ggsave(file.path(basic_dir, "cpg_sites_per_sample.png"), p1, width = 10, height = 6, dpi = 300)
   ggsave(file.path(basic_dir, "cpg_sites_per_sample.pdf"), p1, width = 10, height = 6)
-  cat("✓ basic/cpg_sites_per_sample.png/pdf\n")
+  cat("[OK] basic/cpg_sites_per_sample.png/pdf\n")
 }
 
 # Plot 2: Mean methylation per sample
@@ -300,7 +300,7 @@ if (any(!is.na(results$mean_methylation) & results$mean_methylation > 0)) {
 
   ggsave(file.path(basic_dir, "mean_methylation_per_sample.png"), p2, width = 10, height = 6, dpi = 300)
   ggsave(file.path(basic_dir, "mean_methylation_per_sample.pdf"), p2, width = 10, height = 6)
-  cat("✓ basic/mean_methylation_per_sample.png/pdf\n")
+  cat("[OK] basic/mean_methylation_per_sample.png/pdf\n")
 }
 
 # Plot 3: Mean coverage per sample
@@ -314,7 +314,7 @@ if (any(!is.na(results$mean_coverage) & results$mean_coverage > 0)) {
 
   ggsave(file.path(basic_dir, "mean_coverage_per_sample.png"), p3, width = 10, height = 6, dpi = 300)
   ggsave(file.path(basic_dir, "mean_coverage_per_sample.pdf"), p3, width = 10, height = 6)
-  cat("✓ basic/mean_coverage_per_sample.png/pdf\n")
+  cat("[OK] basic/mean_coverage_per_sample.png/pdf\n")
 }
 
 # Plot 4: Total reads per sample
@@ -330,7 +330,7 @@ if (!all(is.na(results$total_reads))) {
 
     ggsave(file.path(basic_dir, "total_reads_per_sample.png"), p4, width = 10, height = 6, dpi = 300)
     ggsave(file.path(basic_dir, "total_reads_per_sample.pdf"), p4, width = 10, height = 6)
-    cat("✓ basic/total_reads_per_sample.png/pdf\n")
+    cat("[OK] basic/total_reads_per_sample.png/pdf\n")
   }
 }
 
@@ -352,7 +352,7 @@ if (any(!is.na(results_long$Value))) {
 
   ggsave(file.path(basic_dir, "summary_overview.png"), p5, width = 10, height = 10, dpi = 300)
   ggsave(file.path(basic_dir, "summary_overview.pdf"), p5, width = 10, height = 10)
-  cat("✓ basic/summary_overview.png/pdf\n")
+  cat("[OK] basic/summary_overview.png/pdf\n")
 }
 
 # ============================================================================
@@ -387,7 +387,7 @@ if (expanded_plots) {
 
     ggsave(file.path(dist_dir, "methylation_distribution.png"), p_dist1, width = 12, height = 6, dpi = 300)
     ggsave(file.path(dist_dir, "methylation_distribution.pdf"), p_dist1, width = 12, height = 6)
-    cat("✓ distribution/methylation_distribution.png/pdf\n")
+    cat("[OK] distribution/methylation_distribution.png/pdf\n")
   }
 
   # 2. Coverage distribution histogram
@@ -412,7 +412,7 @@ if (expanded_plots) {
 
     ggsave(file.path(dist_dir, "coverage_distribution.png"), p_dist2, width = 12, height = 8, dpi = 300)
     ggsave(file.path(dist_dir, "coverage_distribution.pdf"), p_dist2, width = 12, height = 8)
-    cat("✓ distribution/coverage_distribution.png/pdf\n")
+    cat("[OK] distribution/coverage_distribution.png/pdf\n")
   }
 
   # QC plots
@@ -431,7 +431,7 @@ if (expanded_plots) {
 
     ggsave(file.path(qc_dir, "low_coverage_cpg_percent.png"), p_qc1, width = 10, height = 6, dpi = 300)
     ggsave(file.path(qc_dir, "low_coverage_cpg_percent.pdf"), p_qc1, width = 10, height = 6)
-    cat("✓ qc/low_coverage_cpg_percent.png/pdf\n")
+    cat("[OK] qc/low_coverage_cpg_percent.png/pdf\n")
   }
 
   # 4. Strand bias plot
@@ -457,7 +457,7 @@ if (expanded_plots) {
 
     ggsave(file.path(qc_dir, "strand_bias.png"), p_qc2, width = 10, height = 6, dpi = 300)
     ggsave(file.path(qc_dir, "strand_bias.pdf"), p_qc2, width = 10, height = 6)
-    cat("✓ qc/strand_bias.png/pdf\n")
+    cat("[OK] qc/strand_bias.png/pdf\n")
   }
 
   # Biological plots
@@ -478,7 +478,7 @@ if (expanded_plots) {
 
   ggsave(file.path(bio_dir, "hyper_hypo_methylated_counts.png"), p_bio1, width = 10, height = 6, dpi = 300)
   ggsave(file.path(bio_dir, "hyper_hypo_methylated_counts.pdf"), p_bio1, width = 10, height = 6)
-  cat("✓ biological/hyper_hypo_methylated_counts.png/pdf\n")
+  cat("[OK] biological/hyper_hypo_methylated_counts.png/pdf\n")
 
   # 6. Methylation by chromosome
   if (length(all_chr_data) > 0) {
@@ -509,7 +509,7 @@ if (expanded_plots) {
 
       ggsave(file.path(bio_dir, "methylation_by_chromosome.png"), p_bio2, width = 14, height = max(6, length(unique(chr_df_main$sample)) * 2), dpi = 300)
       ggsave(file.path(bio_dir, "methylation_by_chromosome.pdf"), p_bio2, width = 14, height = max(6, length(unique(chr_df_main$sample)) * 2))
-      cat("✓ biological/methylation_by_chromosome.png/pdf\n")
+      cat("[OK] biological/methylation_by_chromosome.png/pdf\n")
     }
   }
 
@@ -557,10 +557,10 @@ if (expanded_plots) {
 
         ggsave(file.path(comp_dir, "sample_correlation_heatmap.png"), p_comp1, width = 8, height = 7, dpi = 300)
         ggsave(file.path(comp_dir, "sample_correlation_heatmap.pdf"), p_comp1, width = 8, height = 7)
-        cat("✓ comparative/sample_correlation_heatmap.png/pdf\n")
+        cat("[OK] comparative/sample_correlation_heatmap.png/pdf\n")
       },
       error = function(e) {
-        cat("⚠ Skipped correlation heatmap:", conditionMessage(e), "\n")
+        cat("[WARN] Skipped correlation heatmap:", conditionMessage(e), "\n")
       }
     )
   }
@@ -599,11 +599,11 @@ if (expanded_plots) {
 
           ggsave(file.path(comp_dir, "pca_plot.png"), p_comp2, width = 8, height = 7, dpi = 300)
           ggsave(file.path(comp_dir, "pca_plot.pdf"), p_comp2, width = 8, height = 7)
-          cat("✓ comparative/pca_plot.png/pdf\n")
+          cat("[OK] comparative/pca_plot.png/pdf\n")
         }
       },
       error = function(e) {
-        cat("⚠ Skipped PCA plot:", conditionMessage(e), "\n")
+        cat("[WARN] Skipped PCA plot:", conditionMessage(e), "\n")
       }
     )
   }
@@ -619,4 +619,4 @@ if (expanded_plots) {
   cat("Use --expanded-plots for additional analysis plots\n")
 }
 cat("==========================================\n")
-cat("\n🎉 Summary report complete!\n")
+cat("\n--- Summary report complete!\n")
