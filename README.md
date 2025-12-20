@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="nanoporetobed_logo.svg" alt="NanoporeToBED Pipeline Logo" width="400">
+  <img src="nanoporetobed_logo.svg" alt="NanoporeToBED Pipeline Logo" width="600">
   
   **Version 1.4.0**
 </div>
