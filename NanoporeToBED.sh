@@ -11,7 +11,7 @@
 #SBATCH --time=72:00:00
 #SBATCH --account YourAccount
 
-VERSION="1.3.0"
+VERSION="1.4.0"
 
 # Environment
 cd $HOME
@@ -36,6 +36,7 @@ THREADS=40
 dry_run=false
 include_fail=false
 include_barcodes=false
+expanded_plots=false
 
 # Parse arguments
 while [[ "$#" -gt 0 ]]; do
@@ -47,8 +48,9 @@ while [[ "$#" -gt 0 ]]; do
     --dry-run) dry_run=true; shift ;;
     --include-fail) include_fail=true; shift ;;
     --include-empty-barcodes) include_barcodes=true; shift ;;
+    --expanded-plots) expanded_plots=true; shift ;;
     -h|--help)
-      echo "Usage: $0 -i <input_dir> -o <output_dir> -ref <reference_genome.fna> [-t <threads>] [--dry-run] [--include-fail] [--include-empty-barcodes]"
+      echo "Usage: $0 -i <input_dir> -o <output_dir> -ref <reference_genome.fna> [-t <threads>] [--dry-run] [--include-fail] [--include-empty-barcodes] [--expanded-plots]"
       echo ""
       echo "Required arguments:"
       echo "  -i, --input       Input directory containing pass/fail subdirectories with barcoded samples"
@@ -60,6 +62,7 @@ while [[ "$#" -gt 0 ]]; do
       echo "  --dry-run                  Run in test mode without processing"
       echo "  --include-fail             Also process samples from fail/ directory (default: only pass/)"
       echo "  --include-empty-barcodes   Include barcode## directories (default: skip, only process named samples)"
+      echo "  --expanded-plots           Generate extended analysis plots (distribution, QC, comparative)"
       echo "  -h, --help                 Show this help message"
       echo ""
       echo "Expected input structure:"
@@ -455,7 +458,11 @@ SUMMARY_SCRIPT="$SCRIPT_DIR/generate_summary.R"
 if [[ -f "$SUMMARY_SCRIPT" ]]; then
   if command -v Rscript &> /dev/null; then
     echo "Running summary statistics and plot generation..."
-    Rscript "$SUMMARY_SCRIPT" "$output_dir" 2>&1 | tee -a "$log_file"
+    if [[ "$expanded_plots" == true ]]; then
+      Rscript "$SUMMARY_SCRIPT" "$output_dir" --expanded-plots 2>&1 | tee -a "$log_file"
+    else
+      Rscript "$SUMMARY_SCRIPT" "$output_dir" 2>&1 | tee -a "$log_file"
+    fi
   else
     echo "⚠️  Rscript not found - skipping summary report"
     echo "   To generate summary, run: Rscript generate_summary.R $output_dir"
