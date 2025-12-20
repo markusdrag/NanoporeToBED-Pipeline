@@ -214,6 +214,8 @@ Where the input directory should contain your `pass/` folder from Guppy output:
 | `-t` | `--threads` | Number of threads to use for processing | No | 40 |
 | | `--dry-run` | Run in test mode without processing | No | false |
 | | `--include-fail` | Also process samples from fail/ directory | No | false |
+| | `--include-empty-barcodes` | Include barcode## directories (default: skip, only process named samples) | No | false |
+| | `--expanded-plots` | Generate extended analysis plots (distribution, QC, comparative) | No | false |
 | `-h` | `--help` | Show help message | No | - |
 
 ### Reference Genome Format
@@ -261,6 +263,47 @@ output_dir/
 2. **Alignment**: Re-aligns reads to reference genome using minimap2 with tag preservation
 3. **Methylation Calling**: Extracts CpG methylation frequencies using modkit
 4. **Quality Control**: Generates comprehensive QC reports using Qualimap
+5. **Summary Report**: Generates statistics and visualisation plots (automatic, or standalone)
+
+## Summary Report (generate_summary.R)
+
+The `generate_summary.R` script runs automatically at the end of the pipeline, or can be used standalone to regenerate plots or analyse existing output directories.
+
+### Standalone Usage
+
+```bash
+# Basic plots only
+Rscript generate_summary.R /path/to/output_dir
+
+# With expanded analysis plots
+Rscript generate_summary.R /path/to/output_dir --expanded-plots
+```
+
+### Output Structure
+
+```
+output_dir/
+├── pipeline_summary.csv           # Summary statistics table
+└── plots/
+    ├── basic/                     # Always generated
+    │   ├── cpg_sites_per_sample.png/pdf
+    │   ├── mean_methylation_per_sample.png/pdf
+    │   ├── mean_coverage_per_sample.png/pdf
+    │   ├── total_reads_per_sample.png/pdf
+    │   └── summary_overview.png/pdf
+    ├── distribution/              # With --expanded-plots
+    │   ├── methylation_distribution.png/pdf
+    │   └── coverage_distribution.png/pdf
+    ├── qc/                        # With --expanded-plots
+    │   ├── low_coverage_cpg_percent.png/pdf
+    │   └── strand_bias.png/pdf
+    ├── biological/                # With --expanded-plots
+    │   ├── hyper_hypo_methylated_counts.png/pdf
+    │   └── methylation_by_chromosome.png/pdf
+    └── comparative/               # With --expanded-plots
+        ├── sample_correlation_heatmap.png/pdf
+        └── pca_plot.png/pdf
+```
 
 ## Running Tips
 

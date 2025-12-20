@@ -23,7 +23,7 @@ output_dir <- args[1]
 expanded_plots <- "--expanded-plots" %in% args
 
 cat("==========================================\n")
-cat("NanoporeToBED Summary Report v1.4.0\n")
+cat("NanoporeToBED Summary Report v1.4.1\n")
 cat("==========================================\n")
 cat("Output directory:", output_dir, "\n")
 cat("\n")
