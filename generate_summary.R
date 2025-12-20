@@ -23,10 +23,25 @@ output_dir <- args[1]
 expanded_plots <- "--expanded-plots" %in% args
 
 cat("==========================================\n")
-cat("NanoporeToBED Summary Report v1.2.0\n")
+cat("NanoporeToBED Summary Report v1.4.0\n")
 cat("==========================================\n")
 cat("Output directory:", output_dir, "\n")
-cat("Expanded plots:", ifelse(expanded_plots, "enabled", "disabled"), "\n\n")
+cat("\n")
+cat("Mode:\n")
+if (expanded_plots) {
+  cat("  ✓ Basic plots (basic/)\n")
+  cat("  ✓ Distribution plots (distribution/)\n")
+  cat("  ✓ QC plots (qc/)\n")
+  cat("  ✓ Biological plots (biological/)\n")
+  cat("  ✓ Comparative plots (comparative/)\n")
+} else {
+  cat("  ✓ Basic plots (basic/)\n")
+  cat("  ○ Distribution plots (use --expanded-plots)\n")
+  cat("  ○ QC plots (use --expanded-plots)\n")
+  cat("  ○ Biological plots (use --expanded-plots)\n")
+  cat("  ○ Comparative plots (use --expanded-plots)\n")
+}
+cat("\n")
 
 # Find all sample directories (those containing .CpG.bed files)
 bed_files <- list.files(output_dir, pattern = "\\.CpG\\.bed$", recursive = TRUE, full.names = TRUE)
