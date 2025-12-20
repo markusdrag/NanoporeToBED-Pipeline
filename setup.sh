@@ -9,7 +9,7 @@ set -e
 echo "=========================================="
 echo "NanoporeToBED - Intelligent Setup"
 echo "=========================================="
-echo "Version: 2.0 (Unified)"
+echo "Version: 1.4.0"
 echo "Pipeline: Drag et al. (2025) bioRxiv"
 echo ""
 

@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # NanoporeToBED Pipeline
-# Version: 1.3.0 (2025-12-19)
+# Version: 1.4.0 (2025-12-19)
 
 #SBATCH --job-name=NanoporeToBED
 #SBATCH --output=NanoporeToBED.out
