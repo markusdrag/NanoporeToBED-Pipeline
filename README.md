@@ -1,5 +1,9 @@
 <div align="center">
-  <img src="nanoporetobed_logo.png" alt="NanoporeToBED Pipeline Logo" width="500">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="logo_dark_bg.png">
+    <source media="(prefers-color-scheme: light)" srcset="logo_white_bg.png">
+    <img alt="NanoporeToBED Pipeline Logo" src="logo_white_bg.png" width="500">
+  </picture>
   
   **Version 1.4.1**
 </div>
