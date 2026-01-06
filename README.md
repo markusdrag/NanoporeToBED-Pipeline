@@ -5,7 +5,14 @@
     <img alt="NanoporeToBED Pipeline Logo" src="logo_white_bg.png" width="500">
   </picture>
   
-  **Version 1.4.1**
+**Nanopore Methylation Processing & BED Generation Pipeline**
+
+*Part of the [MethylSense](https://github.com/markusdrag/MethylSense) Package*
+
+[![Version](https://img.shields.io/badge/version-1.4.1-brightgreen.svg)](https://github.com/markusdrag/NanoporeToBED-Pipeline)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![DOI](https://img.shields.io/badge/DOI-10.1101%2F2025.04.11.648151-orange.svg)](https://doi.org/10.1101/2025.04.11.648151)
+
 </div>
 
 #
