@@ -2,7 +2,7 @@
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="logo_dark_bg.png">
     <source media="(prefers-color-scheme: light)" srcset="logo_white_bg.png">
-    <img alt="NanoporeToBED Pipeline Logo" src="logo_white_bg.png" width="500">
+    <img alt="NanoporeToBED Pipeline Logo" src="logo_white_bg.png" width="400">
   </picture>
   
 **Nanopore Methylation Processing & BED Generation Pipeline**
