@@ -62,7 +62,7 @@ fastq_gpu_hac_mod/
 - The pipeline looks for `pass/` subdirectory by default
 - Sample directories can have any name (barcode01, sample_name, etc.)
 - Barcode information is extracted from BAM file headers, not directory names
-- Output sample names are formatted as: `<input_dir_name>_b##` (e.g., `L07_HUMB_LAB_b03`)
+- Output sample names are formatted as: `<input_dir_name>_b##` (e.g., `sample_A_b01`)
 
 ## Installation
 
@@ -233,23 +233,23 @@ The reference genome should be a single FASTA file:
 
 ```
 output_dir/
-├── L07_HUMB_LAB_b03/                         # Sample directory (name_barcode)
-│   ├── L07_HUMB_LAB_b03.merged.bam           # Merged BAM with methylation tags
-│   ├── L07_HUMB_LAB_b03.merged.bam.bai
-│   ├── L07_HUMB_LAB_b03.minimap.bam          # Aligned BAM
-│   ├── L07_HUMB_LAB_b03.minimap.bam.bai
-│   ├── L07_HUMB_LAB_b03.CpG.bed              # Methylation calls
+├── sample_A_b01/                         # Sample directory (name_barcode)
+│   ├── sample_A_b01.merged.bam           # Merged BAM with methylation tags
+│   ├── sample_A_b01.merged.bam.bai
+│   ├── sample_A_b01.minimap.bam          # Aligned BAM
+│   ├── sample_A_b01.minimap.bam.bai
+│   ├── sample_A_b01.CpG.bed              # Methylation calls
 │   ├── qualimap/                              # QC reports
 │   │   ├── qualimapReport.html
 │   │   ├── genome_results.txt
 │   │   └── raw_data_qualimapReport/
 │   └── bam_list.txt                           # Processing manifest
-├── L08_HUMB_FIELD_b05/
+├── sample_B_b02/
 │   └── ...
 └── logs/
     ├── pipeline_master_log_YYYYMMDD_HHMMSS.txt
-    ├── L07_HUMB_LAB_b03.log
-    └── L08_HUMB_FIELD_b05.log
+    ├── sample_A_b01.log
+    └── sample_B_b02.log
 ```
 
 ### Output File Descriptions
@@ -315,9 +315,9 @@ output_dir/
 <tr>
 <td width="50%">
 
-**Summary Overview**
+**CpG Sites per Sample**
 
-<img src="screenshots/summary_overview.png" alt="Summary Overview" style="max-width: 100%; height: auto;">
+<img src="screenshots/cpg_sites_per_sample.png" alt="CpG Sites" style="max-width: 100%; height: auto;">
 
 </td>
 <td width="50%">
