@@ -309,6 +309,59 @@ output_dir/
         └── pca_plot.png/pdf
 ```
 
+### Example Output Plots
+
+<table>
+<tr>
+<td width="50%">
+
+**Summary Overview**
+
+<img src="screenshots/summary_overview.png" alt="Summary Overview" style="max-width: 100%; height: auto;">
+
+</td>
+<td width="50%">
+
+**Mean Methylation per Sample**
+
+<img src="screenshots/mean_methylation_per_sample.png" alt="Mean Methylation" style="max-width: 100%; height: auto;">
+
+</td>
+</tr>
+<tr>
+<td width="50%">
+
+**Mean Coverage per Sample**
+
+<img src="screenshots/mean_coverage_per_sample.png" alt="Mean Coverage" style="max-width: 100%; height: auto;">
+
+</td>
+<td width="50%">
+
+**Methylation Distribution**
+
+<img src="screenshots/methylation_distribution.png" alt="Methylation Distribution" style="max-width: 100%; height: auto;">
+
+</td>
+</tr>
+<tr>
+<td width="50%">
+
+**Strand Bias QC**
+
+<img src="screenshots/strand_bias.png" alt="Strand Bias" style="max-width: 100%; height: auto;">
+
+</td>
+<td width="50%">
+
+**Sample Correlation Heatmap**
+
+<img src="screenshots/sample_correlation_heatmap.png" alt="Correlation Heatmap" style="max-width: 100%; height: auto;">
+
+</td>
+</tr>
+</table>
+
 ## Running Tips
 
 ### SLURM Configuration
