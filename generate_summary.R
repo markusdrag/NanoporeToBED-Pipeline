@@ -1,7 +1,7 @@
 #!/usr/bin/env Rscript
 
 # NanoporeToBED Pipeline - Summary Statistics and Plots
-# Version: 1.4.1
+# Version: 1.5.0
 # Author: Markus Hodal Drag
 
 suppressPackageStartupMessages({
@@ -11,11 +11,30 @@ suppressPackageStartupMessages({
   library(scales)
 })
 
+# ============================================================================
 # Parse command line arguments
+# ============================================================================
 args <- commandArgs(trailingOnly = TRUE)
+
+# Check for --summary_file flag
+summary_file_idx <- which(args == "--summary_file")
+if (length(summary_file_idx) > 0 && (summary_file_idx + 1) <= length(args)) {
+  input_summary_file <- args[summary_file_idx + 1]
+  args <- args[-c(summary_file_idx, summary_file_idx + 1)] # Remove from args
+} else {
+  input_summary_file <- NULL
+}
+
 if (length(args) < 1) {
-  cat("Usage: Rscript generate_summary.R <output_dir> [--expanded-plots]\n")
-  cat("  --expanded-plots  Generate additional distribution, QC, and comparative plots\n")
+  cat("Usage: Rscript generate_summary.R <output_dir> [OPTIONS]\n")
+  cat("\nOptions:\n")
+  cat("  --expanded-plots         Generate additional distribution, QC, and comparative plots\n")
+  cat("  --summary_file <path>    Use existing pipeline_summary.csv instead of scanning directory\n")
+  cat("                           Note: Duplicate sample IDs are aggregated automatically\n")
+  cat("\nExamples:\n")
+  cat("  Rscript generate_summary.R /path/to/output\n")
+  cat("  Rscript generate_summary.R /path/to/output --summary_file /path/to/pipeline_summary.csv\n")
+  cat("  Rscript generate_summary.R /path/to/output --summary_file /path/to/pipeline_summary.csv --expanded-plots\n")
   quit(status = 1)
 }
 
@@ -23,9 +42,14 @@ output_dir <- args[1]
 expanded_plots <- "--expanded-plots" %in% args
 
 cat("==========================================\n")
-cat("NanoporeToBED Summary Report v1.4.1\n")
+cat("NanoporeToBED Summary Report v1.5.0\n")
 cat("==========================================\n")
 cat("Output directory:", output_dir, "\n")
+
+if (!is.null(input_summary_file)) {
+  cat("Input summary file:", input_summary_file, "\n")
+}
+
 cat("\n")
 cat("Mode:\n")
 if (expanded_plots) {
@@ -43,188 +67,340 @@ if (expanded_plots) {
 }
 cat("\n")
 
-# Find all sample directories (those containing .CpG.bed files)
-bed_files <- list.files(output_dir, pattern = "\\.CpG\\.bed$", recursive = TRUE, full.names = TRUE)
-
-if (length(bed_files) == 0) {
-  cat("ERROR: No .CpG.bed files found in", output_dir, "\n")
-  quit(status = 1)
-}
-
-cat("Found", length(bed_files), "sample(s)\n\n")
-
-# Initialize results dataframe
-results <- data.frame(
-  sample = character(),
-  cpg_sites = numeric(),
-  mean_methylation = numeric(),
-  median_methylation = numeric(),
-  mean_coverage = numeric(),
-  total_reads = numeric(),
-  low_cov_percent = numeric(),
-  hyper_meth_count = numeric(),
-  hypo_meth_count = numeric(),
-  stringsAsFactors = FALSE
-)
-
-# Store raw data for expanded plots
+# Store raw data for expanded plots (only used in directory mode)
 all_meth_data <- list()
 all_chr_data <- list()
 all_strand_data <- list()
 
-# Process each sample
-for (bed_file in bed_files) {
-  sample_name <- gsub("\\.CpG\\.bed$", "", basename(bed_file))
-  sample_dir <- dirname(bed_file)
+# ============================================================================
+# DATA LOADING: Either from summary file or from directory scan
+# ============================================================================
 
-  cat("Processing:", sample_name, "\n")
+if (!is.null(input_summary_file)) {
+  # -------------------------------------------------------------------------
+  # MODE 1: Load from existing summary CSV file
+  # -------------------------------------------------------------------------
+  cat("--- Loading from summary file ---\n")
 
-  # Read BED file
-  bed_lines <- tryCatch(
+  if (!file.exists(input_summary_file)) {
+    cat("ERROR: Summary file not found:", input_summary_file, "\n")
+    quit(status = 1)
+  }
+
+  raw_results <- tryCatch(
     {
-      readLines(bed_file, warn = FALSE)
+      read.csv(input_summary_file, stringsAsFactors = FALSE)
     },
     error = function(e) {
-      cat("  Warning: Could not read", bed_file, "\n")
-      return(NULL)
+      cat("ERROR: Could not read summary file:", conditionMessage(e), "\n")
+      quit(status = 1)
     }
   )
 
-  if (is.null(bed_lines) || length(bed_lines) == 0) {
-    cat("  Warning: Empty BED file\n")
-    next
-  }
+  cat("Loaded", nrow(raw_results), "rows from summary file\n")
 
-  bed_lines <- bed_lines[!grepl("^#", bed_lines) & nchar(bed_lines) > 0]
+  # Standardise column names (handle variations)
+  colnames(raw_results) <- tolower(colnames(raw_results))
 
-  if (length(bed_lines) == 0) {
-    cat("  Warning: No data lines in BED file\n")
-    next
-  }
-
-  bed_data <- tryCatch(
-    {
-      read.table(text = bed_lines, header = FALSE, stringsAsFactors = FALSE, fill = TRUE)
-    },
-    error = function(e) {
-      cat("  Warning: Could not parse BED data:", conditionMessage(e), "\n")
-      return(NULL)
-    }
+  # Map common column name variations
+  col_mapping <- list(
+    sample = c("sample", "sample_id", "sample_name"),
+    cpg_sites = c("cpg_sites", "cpg_count", "n_cpg"),
+    mean_methylation = c("mean_methy", "mean_methylation", "mean_meth"),
+    median_methylation = c("median_meth", "median_methylation"),
+    mean_coverage = c("mean_coverage", "mean_cov", "coverage"),
+    total_reads = c("total_reads", "reads", "n_reads"),
+    low_cov_percent = c("low_cov_percent", "low_cov_pct", "low_coverage_percent"),
+    hyper_meth_count = c("hyper_meth", "hyper_meth_count", "hyper_count"),
+    hypo_meth_count = c("hypo_meth_count", "hypo_meth", "hypo_count")
   )
 
-  if (is.null(bed_data) || nrow(bed_data) == 0) next
-
-  cat("  BED columns:", ncol(bed_data), "\n")
-
-  # Extract data based on columns available
-  if (ncol(bed_data) >= 12) {
-    chr <- bed_data[, 1]
-    strand <- bed_data[, 6]
-    coverage <- as.numeric(bed_data[, 10])
-    percent_mod <- as.numeric(bed_data[, 11])
-
-    if (max(percent_mod, na.rm = TRUE) > 1) {
-      methylation <- percent_mod / 100
-      cat("  Methylation scale: 0-100 (converted to fraction)\n")
-    } else {
-      methylation <- percent_mod
-      cat("  Methylation scale: 0-1 (fraction)\n")
+  # Function to find matching column
+  find_col <- function(df, possible_names) {
+    for (name in possible_names) {
+      if (name %in% colnames(df)) {
+        return(name)
+      }
     }
-  } else if (ncol(bed_data) >= 6) {
-    chr <- bed_data[, 1]
-    strand <- bed_data[, 6]
-    score <- as.numeric(bed_data[, 5])
-    if (max(score, na.rm = TRUE) > 1) {
-      methylation <- score / 100
-    } else {
-      methylation <- score
+    return(NULL)
+  }
+
+  # Rename columns to standard names
+  for (std_name in names(col_mapping)) {
+    found_col <- find_col(raw_results, col_mapping[[std_name]])
+    if (!is.null(found_col) && found_col != std_name) {
+      colnames(raw_results)[colnames(raw_results) == found_col] <- std_name
     }
-    coverage <- rep(NA, nrow(bed_data))
-    cat("  Using minimal BED format\n")
+  }
+
+  # Validate required columns
+  required_cols <- c("sample")
+  missing_cols <- setdiff(required_cols, colnames(raw_results))
+  if (length(missing_cols) > 0) {
+    cat("ERROR: Missing required columns:", paste(missing_cols, collapse = ", "), "\n")
+    quit(status = 1)
+  }
+
+  # Check for duplicate sample IDs
+  dup_samples <- raw_results$sample[duplicated(raw_results$sample)]
+  if (length(dup_samples) > 0) {
+    cat("\n--- Aggregating duplicate sample IDs ---\n")
+    cat("Found", length(unique(dup_samples)), "samples with multiple runs:\n")
+    for (s in unique(dup_samples)) {
+      n_runs <- sum(raw_results$sample == s)
+      cat("  ", s, ": ", n_runs, " runs\n", sep = "")
+    }
+    cat("\n")
+
+    # Aggregate function: weighted mean for averages, sum for counts
+    results <- raw_results %>%
+      group_by(sample) %>%
+      summarise(
+        # Summed values (counts)
+        cpg_sites = sum(cpg_sites, na.rm = TRUE),
+        total_reads = sum(total_reads, na.rm = TRUE),
+        hyper_meth_count = sum(hyper_meth_count, na.rm = TRUE),
+        hypo_meth_count = sum(hypo_meth_count, na.rm = TRUE),
+
+        # Weighted means (weighted by total_reads for methylation, by cpg_sites for coverage)
+        mean_methylation = if (all(is.na(mean_methylation)) || sum(total_reads, na.rm = TRUE) == 0) {
+          mean(mean_methylation, na.rm = TRUE)
+        } else {
+          sum(mean_methylation * total_reads, na.rm = TRUE) / sum(total_reads, na.rm = TRUE)
+        },
+        median_methylation = if (all(is.na(median_methylation)) || sum(total_reads, na.rm = TRUE) == 0) {
+          mean(median_methylation, na.rm = TRUE)
+        } else {
+          sum(median_methylation * total_reads, na.rm = TRUE) / sum(total_reads, na.rm = TRUE)
+        },
+        mean_coverage = if (all(is.na(mean_coverage)) || sum(cpg_sites, na.rm = TRUE) == 0) {
+          mean(mean_coverage, na.rm = TRUE)
+        } else {
+          sum(mean_coverage * cpg_sites, na.rm = TRUE) / sum(cpg_sites, na.rm = TRUE)
+        },
+
+        # Weighted mean for low_cov_percent (weighted by cpg_sites)
+        low_cov_percent = if (all(is.na(low_cov_percent)) || sum(cpg_sites, na.rm = TRUE) == 0) {
+          mean(low_cov_percent, na.rm = TRUE)
+        } else {
+          sum(low_cov_percent * cpg_sites, na.rm = TRUE) / sum(cpg_sites, na.rm = TRUE)
+        },
+        .groups = "drop"
+      ) %>%
+      as.data.frame()
+
+    cat("Aggregated to", nrow(results), "unique samples\n\n")
   } else {
-    cat("  Warning: Unexpected BED format (only", ncol(bed_data), "columns)\n")
-    next
+    results <- raw_results
   }
 
-  # Clean data
-  valid_meth <- !is.na(methylation) & methylation >= 0 & methylation <= 1
-  if (sum(valid_meth) == 0) {
-    cat("  Warning: No valid methylation values found\n")
-    next
-  }
-
-  methylation_clean <- methylation[valid_meth]
-  coverage_clean <- coverage[valid_meth]
-  chr_clean <- chr[valid_meth]
-  strand_clean <- strand[valid_meth]
-
-  # Calculate statistics
-  cpg_sites <- length(methylation_clean)
-  mean_meth <- mean(methylation_clean, na.rm = TRUE)
-  median_meth <- median(methylation_clean, na.rm = TRUE)
-  mean_cov <- mean(coverage_clean, na.rm = TRUE)
-
-  # Extended stats for expanded plots
-  low_cov_percent <- sum(coverage_clean < 10, na.rm = TRUE) / cpg_sites * 100
-  hyper_meth_count <- sum(methylation_clean > 0.8, na.rm = TRUE)
-  hypo_meth_count <- sum(methylation_clean < 0.2, na.rm = TRUE)
-
-  cat(sprintf("  CpG sites: %d\n", cpg_sites))
-  cat(sprintf("  Mean methylation: %.3f (%.1f%%)\n", mean_meth, mean_meth * 100))
-  cat(sprintf("  Mean coverage: %.1f\n", mean_cov))
-
-  # Get total reads from qualimap
-  qualimap_file <- file.path(sample_dir, "qualimap", "genome_results.txt")
-  total_reads <- NA
-  if (file.exists(qualimap_file)) {
-    qualimap_lines <- readLines(qualimap_file)
-    reads_line <- grep("number of reads", qualimap_lines, value = TRUE, ignore.case = TRUE)
-    if (length(reads_line) > 0) {
-      total_reads <- as.numeric(gsub("[^0-9]", "", reads_line[1]))
+  # Ensure all expected columns exist
+  expected_cols <- c(
+    "sample", "cpg_sites", "mean_methylation", "median_methylation",
+    "mean_coverage", "total_reads", "low_cov_percent",
+    "hyper_meth_count", "hypo_meth_count"
+  )
+  for (col in expected_cols) {
+    if (!col %in% colnames(results)) {
+      results[[col]] <- NA
     }
   }
 
-  # Store raw data for expanded plots
+  # Note: Expanded plots not available in summary file mode (no raw data)
   if (expanded_plots) {
-    all_meth_data[[sample_name]] <- methylation_clean
-    all_chr_data[[sample_name]] <- data.frame(
-      chr = chr_clean,
-      methylation = methylation_clean,
-      stringsAsFactors = FALSE
-    )
-    all_strand_data[[sample_name]] <- data.frame(
-      strand = strand_clean,
-      methylation = methylation_clean,
-      coverage = coverage_clean,
-      stringsAsFactors = FALSE
-    )
+    cat("WARNING: Expanded plots require raw BED file data.\n")
+    cat("         Some plots (violin, coverage distribution, strand bias, chromosome) will be skipped.\n")
+    cat("         Basic plots and summary-based plots will be generated.\n\n")
+  }
+} else {
+  # -------------------------------------------------------------------------
+  # MODE 2: Scan directory for BED files (original behaviour)
+  # -------------------------------------------------------------------------
+
+  # Find all sample directories (those containing .CpG.bed files)
+  bed_files <- list.files(output_dir, pattern = "\\.CpG\\.bed$", recursive = TRUE, full.names = TRUE)
+
+  if (length(bed_files) == 0) {
+    cat("ERROR: No .CpG.bed files found in", output_dir, "\n")
+    quit(status = 1)
   }
 
-  # Add to results
-  results <- rbind(results, data.frame(
-    sample = sample_name,
-    cpg_sites = cpg_sites,
-    mean_methylation = mean_meth,
-    median_methylation = median_meth,
-    mean_coverage = mean_cov,
-    total_reads = total_reads,
-    low_cov_percent = low_cov_percent,
-    hyper_meth_count = hyper_meth_count,
-    hypo_meth_count = hypo_meth_count,
+  cat("Found", length(bed_files), "sample(s)\n\n")
+
+  # Initialize results dataframe
+  results <- data.frame(
+    sample = character(),
+    cpg_sites = numeric(),
+    mean_methylation = numeric(),
+    median_methylation = numeric(),
+    mean_coverage = numeric(),
+    total_reads = numeric(),
+    low_cov_percent = numeric(),
+    hyper_meth_count = numeric(),
+    hypo_meth_count = numeric(),
     stringsAsFactors = FALSE
-  ))
+  )
+
+  # Process each sample
+  for (bed_file in bed_files) {
+    sample_name <- gsub("\\.CpG\\.bed$", "", basename(bed_file))
+    sample_dir <- dirname(bed_file)
+
+    cat("Processing:", sample_name, "\n")
+
+    # Read BED file
+    bed_lines <- tryCatch(
+      {
+        readLines(bed_file, warn = FALSE)
+      },
+      error = function(e) {
+        cat("  Warning: Could not read", bed_file, "\n")
+        return(NULL)
+      }
+    )
+
+    if (is.null(bed_lines) || length(bed_lines) == 0) {
+      cat("  Warning: Empty BED file\n")
+      next
+    }
+
+    bed_lines <- bed_lines[!grepl("^#", bed_lines) & nchar(bed_lines) > 0]
+
+    if (length(bed_lines) == 0) {
+      cat("  Warning: No data lines in BED file\n")
+      next
+    }
+
+    bed_data <- tryCatch(
+      {
+        read.table(text = bed_lines, header = FALSE, stringsAsFactors = FALSE, fill = TRUE)
+      },
+      error = function(e) {
+        cat("  Warning: Could not parse BED data:", conditionMessage(e), "\n")
+        return(NULL)
+      }
+    )
+
+    if (is.null(bed_data) || nrow(bed_data) == 0) next
+
+    cat("  BED columns:", ncol(bed_data), "\n")
+
+    # Extract data based on columns available
+    if (ncol(bed_data) >= 12) {
+      chr <- bed_data[, 1]
+      strand <- bed_data[, 6]
+      coverage <- as.numeric(bed_data[, 10])
+      percent_mod <- as.numeric(bed_data[, 11])
+
+      if (max(percent_mod, na.rm = TRUE) > 1) {
+        methylation <- percent_mod / 100
+        cat("  Methylation scale: 0-100 (converted to fraction)\n")
+      } else {
+        methylation <- percent_mod
+        cat("  Methylation scale: 0-1 (fraction)\n")
+      }
+    } else if (ncol(bed_data) >= 6) {
+      chr <- bed_data[, 1]
+      strand <- bed_data[, 6]
+      score <- as.numeric(bed_data[, 5])
+      if (max(score, na.rm = TRUE) > 1) {
+        methylation <- score / 100
+      } else {
+        methylation <- score
+      }
+      coverage <- rep(NA, nrow(bed_data))
+      cat("  Using minimal BED format\n")
+    } else {
+      cat("  Warning: Unexpected BED format (only", ncol(bed_data), "columns)\n")
+      next
+    }
+
+    # Clean data
+    valid_meth <- !is.na(methylation) & methylation >= 0 & methylation <= 1
+    if (sum(valid_meth) == 0) {
+      cat("  Warning: No valid methylation values found\n")
+      next
+    }
+
+    methylation_clean <- methylation[valid_meth]
+    coverage_clean <- coverage[valid_meth]
+    chr_clean <- chr[valid_meth]
+    strand_clean <- strand[valid_meth]
+
+    # Calculate statistics
+    cpg_sites <- length(methylation_clean)
+    mean_meth <- mean(methylation_clean, na.rm = TRUE)
+    median_meth <- median(methylation_clean, na.rm = TRUE)
+    mean_cov <- mean(coverage_clean, na.rm = TRUE)
+
+    # Extended stats for expanded plots
+    low_cov_percent <- sum(coverage_clean < 10, na.rm = TRUE) / cpg_sites * 100
+    hyper_meth_count <- sum(methylation_clean > 0.8, na.rm = TRUE)
+    hypo_meth_count <- sum(methylation_clean < 0.2, na.rm = TRUE)
+
+    cat(sprintf("  CpG sites: %d\n", cpg_sites))
+    cat(sprintf("  Mean methylation: %.3f (%.1f%%)\n", mean_meth, mean_meth * 100))
+    cat(sprintf("  Mean coverage: %.1f\n", mean_cov))
+
+    # Get total reads from qualimap
+    qualimap_file <- file.path(sample_dir, "qualimap", "genome_results.txt")
+    total_reads <- NA
+    if (file.exists(qualimap_file)) {
+      qualimap_lines <- readLines(qualimap_file)
+      reads_line <- grep("number of reads", qualimap_lines, value = TRUE, ignore.case = TRUE)
+      if (length(reads_line) > 0) {
+        total_reads <- as.numeric(gsub("[^0-9]", "", reads_line[1]))
+      }
+    }
+
+    # Store raw data for expanded plots
+    if (expanded_plots) {
+      all_meth_data[[sample_name]] <- methylation_clean
+      all_chr_data[[sample_name]] <- data.frame(
+        chr = chr_clean,
+        methylation = methylation_clean,
+        stringsAsFactors = FALSE
+      )
+      all_strand_data[[sample_name]] <- data.frame(
+        strand = strand_clean,
+        methylation = methylation_clean,
+        coverage = coverage_clean,
+        stringsAsFactors = FALSE
+      )
+    }
+
+    # Add to results
+    results <- rbind(results, data.frame(
+      sample = sample_name,
+      cpg_sites = cpg_sites,
+      mean_methylation = mean_meth,
+      median_methylation = median_meth,
+      mean_coverage = mean_cov,
+      total_reads = total_reads,
+      low_cov_percent = low_cov_percent,
+      hyper_meth_count = hyper_meth_count,
+      hypo_meth_count = hypo_meth_count,
+      stringsAsFactors = FALSE
+    ))
+  }
 }
 
+# ============================================================================
 # Check results
+# ============================================================================
+
 if (nrow(results) == 0) {
-  cat("\nERROR: No valid data could be extracted from BED files\n")
+  cat("\nERROR: No valid data could be extracted\n")
   quit(status = 1)
 }
 
-# Save summary table
-summary_file <- file.path(output_dir, "pipeline_summary.csv")
-write.csv(results, summary_file, row.names = FALSE)
-cat("\nSummary saved to:", summary_file, "\n")
+# Save summary table (only if not loading from file, or save aggregated version)
+summary_output_file <- file.path(output_dir, "pipeline_summary.csv")
+if (!is.null(input_summary_file)) {
+  summary_output_file <- file.path(output_dir, "pipeline_summary_aggregated.csv")
+}
+write.csv(results, summary_output_file, row.names = FALSE)
+cat("\nSummary saved to:", summary_output_file, "\n")
 
 # Print summary table
 cat("\n==========================================\n")
@@ -365,7 +541,7 @@ if (expanded_plots) {
   # Distribution plots
   cat("\n[Distribution Plots]\n")
 
-  # 1. Methylation distribution violin plot
+  # 1. Methylation distribution violin plot (requires raw data)
   if (length(all_meth_data) > 0) {
     meth_dist_df <- do.call(rbind, lapply(names(all_meth_data), function(s) {
       data.frame(sample = s, methylation = all_meth_data[[s]], stringsAsFactors = FALSE)
@@ -388,9 +564,11 @@ if (expanded_plots) {
     ggsave(file.path(dist_dir, "methylation_distribution.png"), p_dist1, width = 12, height = 6, dpi = 300)
     ggsave(file.path(dist_dir, "methylation_distribution.pdf"), p_dist1, width = 12, height = 6)
     cat("[OK] distribution/methylation_distribution.png/pdf\n")
+  } else {
+    cat("[SKIP] distribution/methylation_distribution (requires raw BED data)\n")
   }
 
-  # 2. Coverage distribution histogram
+  # 2. Coverage distribution histogram (requires raw data)
   if (length(all_strand_data) > 0 && any(sapply(all_strand_data, function(x) any(!is.na(x$coverage))))) {
     cov_dist_df <- do.call(rbind, lapply(names(all_strand_data), function(s) {
       data.frame(sample = s, coverage = all_strand_data[[s]]$coverage, stringsAsFactors = FALSE)
@@ -413,6 +591,8 @@ if (expanded_plots) {
     ggsave(file.path(dist_dir, "coverage_distribution.png"), p_dist2, width = 12, height = 8, dpi = 300)
     ggsave(file.path(dist_dir, "coverage_distribution.pdf"), p_dist2, width = 12, height = 8)
     cat("[OK] distribution/coverage_distribution.png/pdf\n")
+  } else {
+    cat("[SKIP] distribution/coverage_distribution (requires raw BED data)\n")
   }
 
   # QC plots
@@ -434,7 +614,7 @@ if (expanded_plots) {
     cat("[OK] qc/low_coverage_cpg_percent.png/pdf\n")
   }
 
-  # 4. Strand bias plot
+  # 4. Strand bias plot (requires raw data)
   if (length(all_strand_data) > 0) {
     strand_summary <- do.call(rbind, lapply(names(all_strand_data), function(s) {
       d <- all_strand_data[[s]]
@@ -458,29 +638,33 @@ if (expanded_plots) {
     ggsave(file.path(qc_dir, "strand_bias.png"), p_qc2, width = 10, height = 6, dpi = 300)
     ggsave(file.path(qc_dir, "strand_bias.pdf"), p_qc2, width = 10, height = 6)
     cat("[OK] qc/strand_bias.png/pdf\n")
+  } else {
+    cat("[SKIP] qc/strand_bias (requires raw BED data)\n")
   }
 
   # Biological plots
   cat("\n[Biological Plots]\n")
 
   # 5. Hyper/Hypo methylated counts
-  hyper_hypo <- results %>%
-    select(sample, hyper_meth_count, hypo_meth_count) %>%
-    pivot_longer(cols = c(hyper_meth_count, hypo_meth_count), names_to = "type", values_to = "count") %>%
-    mutate(type = ifelse(type == "hyper_meth_count", "Hyper (>80%)", "Hypo (<20%)"))
+  if (any(!is.na(results$hyper_meth_count)) && any(!is.na(results$hypo_meth_count))) {
+    hyper_hypo <- results %>%
+      select(sample, hyper_meth_count, hypo_meth_count) %>%
+      pivot_longer(cols = c(hyper_meth_count, hypo_meth_count), names_to = "type", values_to = "count") %>%
+      mutate(type = ifelse(type == "hyper_meth_count", "Hyper (>80%)", "Hypo (<20%)"))
 
-  p_bio1 <- ggplot(hyper_hypo, aes(x = sample, y = count, fill = type)) +
-    geom_bar(stat = "identity", position = "dodge", alpha = 0.8) +
-    scale_fill_manual(values = c("Hyper (>80%)" = "#e15759", "Hypo (<20%)" = "#4e79a7")) +
-    scale_y_continuous(labels = comma) +
-    labs(title = "Hyper/Hypo-Methylated CpG Counts", x = "Sample", y = "Number of CpG Sites", fill = "Methylation State") +
-    theme_nanopore
+    p_bio1 <- ggplot(hyper_hypo, aes(x = sample, y = count, fill = type)) +
+      geom_bar(stat = "identity", position = "dodge", alpha = 0.8) +
+      scale_fill_manual(values = c("Hyper (>80%)" = "#e15759", "Hypo (<20%)" = "#4e79a7")) +
+      scale_y_continuous(labels = comma) +
+      labs(title = "Hyper/Hypo-Methylated CpG Counts", x = "Sample", y = "Number of CpG Sites", fill = "Methylation State") +
+      theme_nanopore
 
-  ggsave(file.path(bio_dir, "hyper_hypo_methylated_counts.png"), p_bio1, width = 10, height = 6, dpi = 300)
-  ggsave(file.path(bio_dir, "hyper_hypo_methylated_counts.pdf"), p_bio1, width = 10, height = 6)
-  cat("[OK] biological/hyper_hypo_methylated_counts.png/pdf\n")
+    ggsave(file.path(bio_dir, "hyper_hypo_methylated_counts.png"), p_bio1, width = 10, height = 6, dpi = 300)
+    ggsave(file.path(bio_dir, "hyper_hypo_methylated_counts.pdf"), p_bio1, width = 10, height = 6)
+    cat("[OK] biological/hyper_hypo_methylated_counts.png/pdf\n")
+  }
 
-  # 6. Methylation by chromosome
+  # 6. Methylation by chromosome (requires raw data)
   if (length(all_chr_data) > 0) {
     chr_df <- do.call(rbind, lapply(names(all_chr_data), function(s) {
       d <- all_chr_data[[s]]
@@ -511,12 +695,14 @@ if (expanded_plots) {
       ggsave(file.path(bio_dir, "methylation_by_chromosome.pdf"), p_bio2, width = 14, height = max(6, length(unique(chr_df_main$sample)) * 2))
       cat("[OK] biological/methylation_by_chromosome.png/pdf\n")
     }
+  } else {
+    cat("[SKIP] biological/methylation_by_chromosome (requires raw BED data)\n")
   }
 
   # Comparative plots
   cat("\n[Comparative Plots]\n")
 
-  # 7. Sample correlation heatmap
+  # 7. Sample correlation heatmap (requires raw data)
   if (length(all_meth_data) >= 2) {
     tryCatch(
       {
@@ -563,10 +749,14 @@ if (expanded_plots) {
         cat("[WARN] Skipped correlation heatmap:", conditionMessage(e), "\n")
       }
     )
+  } else if (is.null(input_summary_file)) {
+    cat("[SKIP] comparative/sample_correlation_heatmap (need >= 2 samples)\n")
+  } else {
+    cat("[SKIP] comparative/sample_correlation_heatmap (requires raw BED data)\n")
   }
 
-  # 8. PCA plot
-  if (length(all_meth_data) >= 3) {
+  # 8. PCA plot (can use summary stats from either mode)
+  if (nrow(results) >= 3) {
     tryCatch(
       {
         # Create a simplified PCA using summary statistics
