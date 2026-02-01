@@ -9,7 +9,7 @@
 
 *Part of the [MethylSense](https://github.com/markusdrag/MethylSense) Package*
 
-[![Version](https://img.shields.io/badge/version-1.4.1-brightgreen.svg)](https://github.com/markusdrag/NanoporeToBED-Pipeline)
+[![Version](https://img.shields.io/badge/version-1.5.0-brightgreen.svg)](https://github.com/markusdrag/NanoporeToBED-Pipeline)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![DOI](https://img.shields.io/badge/DOI-10.1101%2F2025.04.11.648151-orange.svg)](https://doi.org/10.1101/2025.04.11.648151)
 
@@ -196,7 +196,10 @@ sbatch NanoporeToBED.sh \
 
 ## Usage
 
-### Basic Command
+### Single-Species Mode
+
+For processing samples from a single organism:
+
 ```bash
 bash NanoporeToBED.sh \
   -i /data/nanopore/fastq_gpu_hac_mod \
@@ -215,7 +218,31 @@ Where the input directory should contain your `pass/` folder from Guppy output:
 └── fail/           # Optional, use --include-fail to process
 ```
 
+### Multi-Species Mode
+
+For processing mixed-species sequencing runs where different barcodes correspond to different organisms, use the multi-species flags:
+
+```bash
+bash NanoporeToBED.sh \
+  -i /data/nanopore/mixed_species \
+  -o /data/nanopore/methylation_results \
+  --multi-mapping "1:11,12:16" \
+  --multi-refs "/refs/pig.fna,/refs/penguin.fna" \
+  -t 40
+```
+
+This example processes barcodes 01-11 as pig samples and barcodes 12-16 as penguin samples, aligning each to the appropriate reference genome.
+
+**Multi-mapping formats:**
+- Range: `1:11` (barcodes 01 through 11)
+- Single: `5` (barcode 05 only)
+- Mixed: `1:5,10,15:20` (barcodes 01-05, 10, and 15-20)
+
+The pipeline will display the barcode-to-reference mapping at startup and provide a summary of which samples used which reference genome at completion.
+
 ### Parameters
+
+#### Single-Species Mode
 
 | Flag | Long Form | Description | Required | Default |
 |------|-----------|-------------|----------|---------|
@@ -228,6 +255,23 @@ Where the input directory should contain your `pass/` folder from Guppy output:
 | | `--include-empty-barcodes` | Include barcode## directories (default: skip, only process named samples) | No | false |
 | | `--expanded-plots` | Generate extended analysis plots (distribution, QC, comparative) | No | false |
 | `-h` | `--help` | Show help message | No | - |
+
+#### Multi-Species Mode
+
+| Flag | Long Form | Description | Required | Default |
+|------|-----------|-------------|----------|---------|
+| `-i` | `--input` | Input directory containing pass/fail folders with barcoded samples | Yes | - |
+| `-o` | `--output` | Output directory for processed data | Yes | - |
+| | `--multi-mapping` | Comma-separated barcode ranges (e.g., "1:11,12:16") | Yes | - |
+| | `--multi-refs` | Comma-separated reference genome paths (e.g., "pig.fna,penguin.fna") | Yes | - |
+| `-t` | `--threads` | Number of threads to use for processing | No | 40 |
+| | `--dry-run` | Run in test mode without processing | No | false |
+| | `--include-fail` | Also process samples from fail/ directory | No | false |
+| | `--include-empty-barcodes` | Include barcode## directories (default: skip, only process named samples) | No | false |
+| | `--expanded-plots` | Generate extended analysis plots (distribution, QC, comparative) | No | false |
+| `-h` | `--help` | Show help message | No | - |
+
+**Note:** Cannot mix single-species (`-ref`) and multi-species (`--multi-mapping`/`--multi-refs`) modes. Choose one mode per run.
 
 ### Reference Genome Format
 The reference genome should be a single FASTA file:
@@ -436,6 +480,9 @@ sbatch NanoporeToBED.sh -ref /path/to/reference.fna ...
 ```
 
 ### Batch Processing
+
+#### Single-Species Batch Processing
+
 For multiple libraries, create a wrapper script:
 ```bash
 #!/bin/bash
@@ -445,6 +492,22 @@ for lib in SRR00000{1..5}; do
     -i /data/nanopore/fastq_gpu_hac_mod \
     -o /data/nanopore/methylation_results/$lib \
     -ref /data/references/genome.fna \
+    -t 40
+done
+```
+
+#### Multi-Species Batch Processing
+
+For processing multiple mixed-species runs:
+```bash
+#!/bin/bash
+# Process multiple mixed-species sequencing runs
+for run_id in Run001 Run002 Run003; do
+  sbatch NanoporeToBED.sh \
+    -i /data/nanopore/${run_id}/fastq_gpu_hac_mod \
+    -o /data/nanopore/methylation_results/${run_id} \
+    --multi-mapping "1:11,12:16" \
+    --multi-refs "/refs/pig.fna,/refs/penguin.fna" \
     -t 40
 done
 ```

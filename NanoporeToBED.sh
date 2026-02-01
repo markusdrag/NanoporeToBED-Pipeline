@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # NanoporeToBED Pipeline
-# Version: 1.4.1
+# Version: 1.5.0
 
 #SBATCH --job-name=NanoporeToBED
 #SBATCH --output=NanoporeToBED.out
@@ -11,7 +11,7 @@
 #SBATCH --time=72:00:00
 #SBATCH --account YourAccount
 
-VERSION="1.4.1"
+VERSION="1.5.0"
 
 # Environment
 cd $HOME
@@ -31,12 +31,126 @@ file_size_bytes() {
   fi
 }
 
+# Multi-species mapping: Parse barcode ranges and build mapping table
+# Creates global parallel arrays: BARCODES and REFERENCES
+parse_multi_mapping() {
+  local mapping="$1"
+  local refs="$2"
+  
+  # Split comma-separated values
+  IFS=',' read -ra RANGES <<< "$mapping"
+  IFS=',' read -ra REFS <<< "$refs"
+  
+  # Validate matching counts
+  if [[ ${#RANGES[@]} -ne ${#REFS[@]} ]]; then
+    echo "Error: Number of barcode ranges (${#RANGES[@]}) doesn't match number of references (${#REFS[@]})"
+    echo "  Ranges: $mapping"
+    echo "  References: $refs"
+    exit 1
+  fi
+  
+  # Process each range and map to corresponding reference
+  for i in "${!RANGES[@]}"; do
+    range="${RANGES[$i]}"
+    ref="${REFS[$i]}"
+    
+    # Trim whitespace
+    range=$(echo "$range" | xargs)
+    ref=$(echo "$ref" | xargs)
+    
+    # Parse range: "1:11" (range) or "5" (single)
+    if [[ "$range" =~ ^([0-9]+):([0-9]+)$ ]]; then
+      # Range format
+      start="${BASH_REMATCH[1]}"
+      end="${BASH_REMATCH[2]}"
+      
+      if [[ $start -gt $end ]]; then
+        echo "Error: Invalid range '$range' (start > end)"
+        exit 1
+      fi
+      
+      # Map all barcodes in range to this reference
+      for bc_num in $(seq $start $end); do
+        bc_formatted=$(printf "b%02d" $bc_num)
+        BARCODES+=("$bc_formatted")
+        REFERENCES+=("$ref")
+      done
+      
+    elif [[ "$range" =~ ^([0-9]+)$ ]]; then
+      # Single barcode
+      bc_num="${BASH_REMATCH[1]}"
+      bc_formatted=$(printf "b%02d" $bc_num)
+      BARCODES+=("$bc_formatted")
+      REFERENCES+=("$ref")
+      
+    else
+      echo "Error: Invalid range format '$range'"
+      echo "  Expected: '1:11' (range) or '5' (single barcode)"
+      exit 1
+    fi
+  done
+  
+  # Validate all reference files exist
+  local checked_refs=()
+  for ref in "${REFS[@]}"; do
+    ref=$(echo "$ref" | xargs)
+    # Skip if already checked
+    local already_checked=false
+    if [[ ${#checked_refs[@]} -gt 0 ]]; then
+      for checked in "${checked_refs[@]}"; do
+        if [[ "$checked" == "$ref" ]]; then
+          already_checked=true
+          break
+        fi
+      done
+    fi
+    if [[ "$already_checked" == true ]]; then
+      continue
+    fi
+    checked_refs+=("$ref")
+    
+    if [[ ! -f "$ref" ]]; then
+      echo "Error: Reference genome not found: $ref"
+      exit 1
+    fi
+  done
+  
+  echo "  [OK] Multi-species mapping parsed successfully"
+}
+
+# Get reference genome for a given barcode using parallel arrays
+get_reference_for_sample() {
+  local barcode="$1"
+  
+  # Search through parallel arrays
+  for i in "${!BARCODES[@]}"; do
+    if [[ "${BARCODES[$i]}" == "$barcode" ]]; then
+      echo "${REFERENCES[$i]}"
+      return 0
+    fi
+  done
+  
+  # No match found
+  echo "Error: No reference genome mapped for barcode $barcode" >&2
+  echo "Available barcode mappings:" >&2
+  for i in "${!BARCODES[@]}"; do
+    echo "  ${BARCODES[$i]} -> ${REFERENCES[$i]}" >&2
+  done | sort >&2
+  return 1
+}
+
 # Default values
 THREADS=40
 dry_run=false
 include_fail=false
 include_barcodes=false
 expanded_plots=false
+multi_mapping=""
+multi_refs=""
+
+# Global arrays for multi-species mapping (parallel arrays: barcodes and refs)
+declare -a BARCODES=()
+declare -a REFERENCES=()
 
 # Parse arguments
 while [[ "$#" -gt 0 ]]; do
@@ -45,17 +159,25 @@ while [[ "$#" -gt 0 ]]; do
     -o|--output) output_dir="$2"; shift 2 ;;
     -ref|--reference) ref_genome="$2"; shift 2 ;;
     -t|--threads) THREADS="$2"; shift 2 ;;
+    --multi-mapping) multi_mapping="$2"; shift 2 ;;
+    --multi-refs) multi_refs="$2"; shift 2 ;;
     --dry-run) dry_run=true; shift ;;
     --include-fail) include_fail=true; shift ;;
     --include-empty-barcodes) include_barcodes=true; shift ;;
     --expanded-plots) expanded_plots=true; shift ;;
     -h|--help)
-      echo "Usage: $0 -i <input_dir> -o <output_dir> -ref <reference_genome.fna> [-t <threads>] [--dry-run] [--include-fail] [--include-empty-barcodes] [--expanded-plots]"
+      echo "Usage: $0 -i <input_dir> -o <output_dir> [-ref <reference.fna> | --multi-mapping <ranges> --multi-refs <refs>] [options]"
       echo ""
-      echo "Required arguments:"
+      echo "Required arguments (single-species mode):"
       echo "  -i, --input       Input directory containing pass/fail subdirectories with barcoded samples"
       echo "  -o, --output      Output directory for processed data"
       echo "  -ref, --reference Path to reference genome FASTA file"
+      echo ""
+      echo "Required arguments (multi-species mode):"
+      echo "  -i, --input         Input directory containing pass/fail subdirectories"
+      echo "  -o, --output        Output directory for processed data"
+      echo "  --multi-mapping     Barcode ranges (e.g., '1:11,12:16' or '1:5,10,15:20')"
+      echo "  --multi-refs        Comma-separated reference genomes (e.g., 'pig.fna,penguin.fna')"
       echo ""
       echo "Optional arguments:"
       echo "  -t, --threads              Number of threads to use (default: 40)"
@@ -73,8 +195,15 @@ while [[ "$#" -gt 0 ]]; do
       echo "  │   └── D02_SAMPLE/"
       echo "  └── fail/              <- only with --include-fail"
       echo ""
-      echo "Example:"
+      echo "Examples:"
+      echo "  # Single species"
       echo "  $0 -i /data/nanopore/fastq_gpu_hac_mod -o /results -ref /ref/genome.fna -t 32"
+      echo ""
+      echo "  # Multiple species (barcodes 1-11 = pigs, 12-16 = penguins)"
+      echo "  $0 -i /data/mixed -o /results \\"
+      echo "    --multi-mapping '1:11,12:16' \\"
+      echo "    --multi-refs '/refs/pig.fna,/refs/penguin.fna' \\"
+      echo "    -t 32"
       exit 0
       ;;
     *) echo "Unknown option: $1"; echo "Use -h for help"; exit 1 ;;
@@ -82,9 +211,34 @@ while [[ "$#" -gt 0 ]]; do
 done
 
 # Validate required arguments
-if [[ -z "${input_dir:-}" || -z "${output_dir:-}" || -z "${ref_genome:-}" ]]; then
+if [[ -z "${input_dir:-}" || -z "${output_dir:-}" ]]; then
   echo "Error: Missing required arguments"
-  echo "Usage: $0 -i <input_dir> -o <output_dir> -ref <reference_genome.fna> [-t <threads>] [--dry-run]"
+  echo "Usage: $0 -i <input_dir> -o <output_dir> [-ref <reference.fna> | --multi-mapping <ranges> --multi-refs <refs>]"
+  echo "Use -h for help"
+  exit 1
+fi
+
+# Validate reference mode (single-species OR multi-species)
+if [[ -n "${ref_genome:-}" && -n "$multi_mapping" ]]; then
+  echo "Error: Cannot use both --reference and --multi-mapping/--multi-refs"
+  echo "Use --reference for single-species, or --multi-mapping + --multi-refs for multi-species"
+  exit 1
+fi
+
+if [[ -z "${ref_genome:-}" && -z "$multi_mapping" ]]; then
+  echo "Error: Must provide either --reference or --multi-mapping + --multi-refs"
+  echo "Use -h for help"
+  exit 1
+fi
+
+if [[ -n "$multi_mapping" && -z "$multi_refs" ]]; then
+  echo "Error: --multi-mapping requires --multi-refs"
+  echo "Use -h for help"
+  exit 1
+fi
+
+if [[ -z "$multi_mapping" && -n "$multi_refs" ]]; then
+  echo "Error: --multi-refs requires --multi-mapping"
   echo "Use -h for help"
   exit 1
 fi
@@ -113,7 +267,17 @@ echo ""
 echo "Configuration:"
 echo "  Input directory:    $input_dir"
 echo "  Output directory:   $output_dir"
-echo "  Reference genome:   $ref_genome"
+
+# Display reference configuration based on mode
+if [[ -n "$multi_mapping" ]]; then
+  echo "  Mode:               Multi-species"
+  echo "  Mapping:            $multi_mapping"
+  echo "  References:         $multi_refs"
+else
+  echo "  Mode:               Single-species"
+  echo "  Reference genome:   $ref_genome"
+fi
+
 echo "  Threads:            $THREADS"
 echo "  Dry run mode:       $dry_run"
 echo ""
@@ -124,12 +288,81 @@ echo ""
 # Convert to absolute paths
 input_dir=$(realpath "$input_dir")
 output_dir=$(realpath "$output_dir")
-ref_genome=$(realpath "$ref_genome")
+
+# Handle single-species reference path conversion
+if [[ -n "${ref_genome:-}" ]]; then
+  ref_genome=$(realpath "$ref_genome")
+fi
+
+# Parse multi-species mapping if provided
+if [[ -n "$multi_mapping" ]]; then
+  echo "Parsing multi-species configuration..."
+  parse_multi_mapping "$multi_mapping" "$multi_refs"
+  echo ""
+  
+  # Display mapping summary
+  echo "=========================================="
+  echo "Multi-Species Barcode Mapping"
+  echo "=========================================="
+  
+  # Get unique references and group barcodes
+  declare -a unique_refs=()
+  for ref in "${REFERENCES[@]}"; do
+    # Check if already in list
+    already_added=false
+    if [[ ${#unique_refs[@]} -gt 0 ]]; then
+      for uref in "${unique_refs[@]}"; do
+        if [[ "$uref" == "$ref" ]]; then
+          already_added=true
+          break
+        fi
+      done
+    fi
+    if [[ "$already_added" == false ]]; then
+      unique_refs+=("$ref")
+    fi
+  done
+  
+  # Display grouped by reference
+  for ref in "${unique_refs[@]}"; do
+    ref_abs=$(realpath "$ref")
+    ref_name=$(basename "$ref")
+    
+    if [[ -f "$ref" ]]; then
+      ref_size=$(du -h "$ref" | cut -f1)
+      echo "  $ref_name ($ref_size)"
+    else
+      echo "  $ref_name"
+    fi
+    
+    # Collect barcodes for this reference
+    barcodes_for_ref=""
+    for i in "${!REFERENCES[@]}"; do
+      if [[ "${REFERENCES[$i]}" == "$ref" ]]; then
+        barcodes_for_ref+="${BARCODES[$i]} "
+      fi
+    done
+    
+    # Sort and display barcodes
+    sorted_barcodes=$(echo "$barcodes_for_ref" | tr ' ' '\n' | sort | tr '\n' ' ')
+    echo "    → Barcodes: $sorted_barcodes"
+    
+    # Update references to absolute paths
+    for i in "${!REFERENCES[@]}"; do
+      if [[ "${REFERENCES[$i]}" == "$ref" ]]; then
+        REFERENCES[$i]="$ref_abs"
+      fi
+    done
+  done
+  echo ""
+fi
 
 echo "Absolute paths:"
 echo "  Input:  $input_dir"
 echo "  Output: $output_dir"
-echo "  Ref:    $ref_genome"
+if [[ -n "${ref_genome:-}" ]]; then
+  echo "  Ref:    $ref_genome"
+fi
 echo ""
 
 # Create output directory structure
@@ -143,14 +376,22 @@ echo ""
 # Simple logging - append output to log file
 # Note: For full logging, run as: bash script.sh 2>&1 | tee logfile.txt
 
-echo "Checking reference genome..."
-if [[ ! -f "$ref_genome" ]]; then
-  echo "[ERROR] ERROR: Reference genome not found: $ref_genome"
-  exit 1
+# Validate reference genome(s)
+if [[ -n "$multi_mapping" ]]; then
+  echo "Validating reference genomes (multi-species mode)..."
+  # References already checked in parse_multi_mapping()
+  echo "  [OK] All reference genomes validated"
+  echo ""
+else
+  echo "Checking reference genome..."
+  if [[ ! -f "$ref_genome" ]]; then
+    echo "[ERROR] ERROR: Reference genome not found: $ref_genome"
+    exit 1
+  fi
+  ref_size=$(du -h "$ref_genome" | cut -f1)
+  echo "  [OK] Reference found: $ref_genome ($ref_size)"
+  echo ""
 fi
-ref_size=$(du -h "$ref_genome" | cut -f1)
-echo "  [OK] Reference found: $ref_genome ($ref_size)"
-echo ""
 
 echo "Scanning for sample directories..."
 
@@ -252,6 +493,7 @@ fi
 
 # Process each sample
 sample_num=0
+processed_samples=""
 for sample_path in $sample_dirs; do
   sample_num=$((sample_num + 1))
 
@@ -277,6 +519,25 @@ for sample_path in $sample_dirs; do
   echo "Sample ID:     $sample_name"
   echo "Input path:    $sample_path"
   echo "Threads:       $THREADS"
+  
+  # Determine which reference to use for this sample
+  if [[ -n "$multi_mapping" ]]; then
+    # Multi-species mode: get reference based on barcode
+    sample_ref=$(get_reference_for_sample "$barcode")
+    if [[ $? -ne 0 ]]; then
+      echo "[ERROR] Failed to find reference for $sample_name ($barcode)"
+      echo "  Skipping this sample..."
+      echo ""
+      continue
+    fi
+    ref_name=$(basename "$sample_ref")
+    echo "Reference:     $ref_name (barcode $barcode)"
+  else
+    # Single-species mode: use global reference
+    sample_ref="$ref_genome"
+    ref_name=$(basename "$ref_genome")
+    echo "Reference:     $ref_name"
+  fi
   echo ""
 
   # Create output directory (flat structure)
@@ -291,7 +552,7 @@ for sample_path in $sample_dirs; do
   echo ""
 
   if [[ "$dry_run" == true ]]; then
-    echo "[DRY RUN] Would process this sample with $THREADS threads"
+    echo "[DRY RUN] Would process this sample with $THREADS threads using $ref_name"
     echo ""
     continue
   fi
@@ -349,12 +610,13 @@ for sample_path in $sample_dirs; do
     echo "  [OK] Already exists: $minimap_bam ($bam_size)"
   else
     echo "  Running minimap2 alignment (preserving methylation tags)..."
+    echo "    Reference: $ref_name"
     echo "    Threads: $THREADS"
     echo "    Mode: map-ont with -y (copy tags)"
     start_time=$(date +%s)
 
     samtools fastq -@${THREADS} -T MM,ML "$merged_bam" | \
-      minimap2 -ax map-ont -t ${THREADS} -y --secondary=no "$ref_genome" - 2>>"$sample_log" | \
+      minimap2 -ax map-ont -t ${THREADS} -y --secondary=no "$sample_ref" - 2>>"$sample_log" | \
       samtools view -@${THREADS} -S -b - 2>>"$sample_log" | \
       samtools sort -@${THREADS} -o "$minimap_bam" -T "$out_sample_dir/reads.tmp" - 2>>"$sample_log"
 
@@ -379,6 +641,7 @@ for sample_path in $sample_dirs; do
     echo "  [OK] Already exists: $methyl_bed ($bed_size)"
   else
     echo "  Running modkit pileup..."
+    echo "    Reference: $ref_name"
     echo "    Mode: CpG methylation"
     echo "    Threads: $THREADS"
     start_time=$(date +%s)
@@ -386,7 +649,7 @@ for sample_path in $sample_dirs; do
     # Run modkit with error handling (show errors on screen)
     # --modified-bases 5mC = 5-methylcytosine (CpG methylation)
     if modkit pileup "$minimap_bam" "$methyl_bed" \
-      --cpg --ref "$ref_genome" -t ${THREADS} --combine-mods --modified-bases 5mC 2>&1 | tee -a "$sample_log"; then
+      --cpg --ref "$sample_ref" -t ${THREADS} --combine-mods --modified-bases 5mC 2>&1 | tee -a "$sample_log"; then
       end_time=$(date +%s)
       elapsed=$((end_time - start_time))
       bed_size=$(du -h "$methyl_bed" | cut -f1)
@@ -432,8 +695,87 @@ for sample_path in $sample_dirs; do
 
   echo "[OK] Sample $sample_name complete!"
   echo ""
+  
+  # Track processed sample (for multi-species summary)
+  processed_samples="$processed_samples$sample_name:$barcode "
 
 done
+
+# Multi-species processing summary
+if [[ -n "$multi_mapping" && -n "$processed_samples" ]]; then
+  echo "=========================================="
+  echo "Multi-Species Processing Summary"
+  echo "=========================================="
+  
+  # Get unique references processed
+  declare -a processed_refs=()
+  declare -a processed_ref_samples=()
+  declare -a processed_ref_counts=()
+  
+  for sample_info in $processed_samples; do
+    sample_name="${sample_info%:*}"
+    barcode="${sample_info#*:}"
+    
+    # Find reference for this barcode
+    sample_ref=""
+    for i in "${!BARCODES[@]}"; do
+      if [[ "${BARCODES[$i]}" == "$barcode" ]]; then
+        sample_ref="${REFERENCES[$i]}"
+        break
+      fi
+    done
+    
+    if [[ -n "$sample_ref" ]]; then
+      ref_name=$(basename "$sample_ref")
+      
+      # Find or add reference in tracking arrays
+      ref_idx=-1
+      if [[ ${#processed_refs[@]} -gt 0 ]]; then
+        for i in "${!processed_refs[@]}"; do
+          if [[ "${processed_refs[$i]}" == "$ref_name" ]]; then
+            ref_idx=$i
+            break
+          fi
+        done
+      fi
+      
+      if [[ $ref_idx -eq -1 ]]; then
+        # New reference
+        processed_refs+=("$ref_name")
+        processed_ref_samples+=("$sample_name ")
+        processed_ref_counts+=(1)
+      else
+        # Existing reference
+        processed_ref_samples[$ref_idx]+="$sample_name "
+        processed_ref_counts[$ref_idx]=$((${processed_ref_counts[$ref_idx]} + 1))
+      fi
+    fi
+  done
+  
+  echo "Samples processed by reference genome:"
+  echo ""
+  for i in "${!processed_refs[@]}"; do
+    ref_name="${processed_refs[$i]}"
+    count="${processed_ref_counts[$i]}"
+    samples="${processed_ref_samples[$i]}"
+    
+    echo "  $ref_name: $count sample(s)"
+    # Display sample names (limit to 10 per line for readability)
+    sample_array=($samples)
+    for j in "${!sample_array[@]}"; do
+      if [[ $((j % 10)) -eq 0 && $j -gt 0 ]]; then
+        echo ""
+        echo -n "    "
+      fi
+      if [[ $j -eq 0 ]]; then
+        echo -n "    "
+      fi
+      echo -n "${sample_array[$j]} "
+    done
+    echo ""
+    echo ""
+  done
+fi
 
 echo "=========================================="
 echo "Pipeline Complete!"
