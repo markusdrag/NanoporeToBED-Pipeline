@@ -1,3 +1,45 @@
+# NanoporeToBED Pipeline v1.7.0 - Aligned BAMs, modkit only
+
+## Summary of Changes
+
+`--aligned-bams` takes BAMs that are already aligned to the reference and runs modkit. Merge, alignment, and Qualimap are not run. `-i` is one `.bam` file, or a directory of them. Files in subdirectories are ignored. An unaligned merged BAM is skipped because its header has no `@SQ` line.
+
+The sample name drops `.bam` and a trailing `.minimap`, so `001_ROCK_EDI_b01.minimap.bam` becomes `001_ROCK_EDI_b01`. A missing `.bai` or `.csi` is built with `samtools index`. `--combine-strands` and `--force` still apply. In this mode `--force` only re-runs modkit.
+
+## Usage
+
+```bash
+bash NanoporeToBED.sh \
+  --aligned-bams \
+  -i /path/to/mapped_bam_files \
+  -o /path/to/results \
+  -ref /path/to/genome.fna \
+  --combine-strands \
+  --force
+```
+
+# NanoporeToBED Pipeline v1.6.0 - Strand choice and full rerun
+
+## Summary of Changes
+
+Two optional switches. Both stay off unless the user sets them.
+
+- `--combine-strands` passes modkit `--combine-strands` beside `--cpg`. The plus and minus cytosines of a CpG are summed onto the plus-strand coordinate. The default still writes those cytosines as two rows. The sum can rescue a CpG whose strands each fall under a later coverage cutoff, and it averages a difference between the strands.
+- `--force` re-runs merge, alignment, methylation calling, and Qualimap even when those outputs already exist. Each product is replaced only after that step succeeds. An existing CpG bed is kept when `--combine-strands` is used without `--force`.
+
+`--combine-mods` is unchanged. It pools modification codes and does not pool strands.
+
+## Usage
+
+```bash
+bash NanoporeToBED.sh \
+  -i /data/nanopore/fastq_gpu_hac_mod \
+  -o /results \
+  -ref /refs/genome.fna \
+  --combine-strands \
+  --force
+```
+
 # NanoporeToBED Pipeline v1.5.0 - Multi-Species Support
 
 ## Summary of Changes

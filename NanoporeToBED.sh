@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # NanoporeToBED Pipeline
-# Version: 1.5.0
+# Version: 1.7.0
 
 #SBATCH --job-name=NanoporeToBED
 #SBATCH --output=NanoporeToBED.out
@@ -11,7 +11,11 @@
 #SBATCH --time=72:00:00
 #SBATCH --account YourAccount
 
-VERSION="1.5.0"
+VERSION="1.7.0"
+
+# Resolve the script directory before any later cd, so the summary script is found
+# when this file is started with a relative path.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Environment
 cd $HOME
@@ -145,6 +149,9 @@ dry_run=false
 include_fail=false
 include_barcodes=false
 expanded_plots=false
+combine_strands=false
+force=false
+aligned_bams=false
 multi_mapping=""
 multi_refs=""
 
@@ -165,6 +172,9 @@ while [[ "$#" -gt 0 ]]; do
     --include-fail) include_fail=true; shift ;;
     --include-empty-barcodes) include_barcodes=true; shift ;;
     --expanded-plots) expanded_plots=true; shift ;;
+    --combine-strands) combine_strands=true; shift ;;
+    --force) force=true; shift ;;
+    --aligned-bams) aligned_bams=true; shift ;;
     -h|--help)
       echo "Usage: $0 -i <input_dir> -o <output_dir> [-ref <reference.fna> | --multi-mapping <ranges> --multi-refs <refs>] [options]"
       echo ""
@@ -185,6 +195,22 @@ while [[ "$#" -gt 0 ]]; do
       echo "  --include-fail             Also process samples from fail/ directory (default: only pass/)"
       echo "  --include-empty-barcodes   Include barcode## directories (default: skip, only process named samples)"
       echo "  --expanded-plots           Generate extended analysis plots (distribution, QC, comparative)"
+      echo "  --combine-strands          Sum both cytosines of each CpG onto the plus-strand coordinate."
+      echo "                             Default keeps the plus and minus rows separate."
+      echo "                             Sites with few reads on each strand can then pass a later coverage cutoff."
+      echo "                             A difference between the two strands is averaged."
+      echo "                             On one shallow cfDNA cohort, coverage 10 gained 1,529 CpGs this way,"
+      echo "                             and 18 of 35 samples still had no site."
+      echo "                             An existing CpG bed is left unchanged unless --force is also set."
+      echo "  --force                    Re-run merge, alignment, methylation calling, and Qualimap"
+      echo "                             even when those outputs already exist."
+      echo "                             Each step replaces its output only after that step succeeds."
+      echo "                             With --aligned-bams, only modkit is re-run."
+      echo "  --aligned-bams             Run modkit on BAMs that are already aligned to -ref."
+      echo "                             -i is one BAM, or a directory of *.bam files."
+      echo "                             Files in subdirectories are ignored."
+      echo "                             Merge, alignment, and Qualimap are not run."
+      echo "                             An unaligned merged BAM cannot be used in this mode."
       echo "  -h, --help                 Show this help message"
       echo ""
       echo "Expected input structure:"
@@ -204,6 +230,15 @@ while [[ "$#" -gt 0 ]]; do
       echo "    --multi-mapping '1:11,12:16' \\"
       echo "    --multi-refs '/refs/pig.fna,/refs/penguin.fna' \\"
       echo "    -t 32"
+      echo ""
+      echo "  # Rebuild every sample, with one row per CpG"
+      echo "  $0 -i /data/nanopore/fastq_gpu_hac_mod -o /results -ref /ref/genome.fna --combine-strands --force"
+      echo ""
+      echo "  # Modkit only, from BAMs that are already aligned"
+      echo "  $0 --aligned-bams -i /data/mapped_bam_files -o /results -ref /ref/genome.fna"
+      echo ""
+      echo "  # Same, with one row per CpG, replacing any existing bed"
+      echo "  $0 --aligned-bams -i /data/mapped_bam_files -o /results -ref /ref/genome.fna --combine-strands --force"
       exit 0
       ;;
     *) echo "Unknown option: $1"; echo "Use -h for help"; exit 1 ;;
@@ -278,8 +313,30 @@ else
   echo "  Reference genome:   $ref_genome"
 fi
 
+if [[ "$combine_strands" == true ]]; then
+  strand_mode="summed onto the plus-strand coordinate"
+else
+  strand_mode="kept as separate rows"
+fi
+
 echo "  Threads:            $THREADS"
 echo "  Dry run mode:       $dry_run"
+echo "  Strands:            $strand_mode"
+if [[ "$aligned_bams" == true ]]; then
+  echo "  Pipeline:           aligned BAMs, modkit only"
+else
+  echo "  Pipeline:           full pipeline"
+fi
+if [[ "$force" == true && "$aligned_bams" == true ]]; then
+  echo "  Existing outputs:   re-run modkit"
+elif [[ "$force" == true ]]; then
+  echo "  Existing outputs:   re-run merge, alignment, methylation calling, and Qualimap"
+else
+  echo "  Existing outputs:   reuse when already present"
+fi
+if [[ "$combine_strands" == true && "$force" != true ]]; then
+  echo "  Note: existing CpG beds larger than 100 kb are kept. Use --force to call them again."
+fi
 echo ""
 echo "Citation: Drag et al. (2025) bioRxiv 2025.04.11.648151"
 echo "          https://doi.org/10.1101/2025.04.11.648151"
@@ -393,7 +450,21 @@ else
   echo ""
 fi
 
-echo "Scanning for sample directories..."
+# Sample name for an aligned BAM. 001_ROCK_EDI_b01.minimap.bam becomes 001_ROCK_EDI_b01.
+aligned_sample_name() {
+  local base
+  base=$(basename "$1")
+  base="${base%.bam}"
+  base="${base%.minimap}"
+  printf '%s\n' "$base"
+}
+
+# True when the BAM header contains a reference sequence.
+bam_has_sq() {
+  samtools view -H "$1" 2>/dev/null | grep -q '^@SQ'
+}
+
+echo "Scanning for samples..."
 
 # Function to extract barcode number from BAM file
 get_barcode() {
@@ -411,6 +482,45 @@ get_barcode() {
 }
 
 # Determine which directories to scan
+sample_dirs=""
+if [[ "$aligned_bams" == true ]]; then
+  echo "  Pipeline: aligned BAMs, modkit only"
+  echo "  Subdirectories are ignored"
+  if [[ -f "$input_dir" ]]; then
+    case "$input_dir" in
+      *.bam)
+        echo "    $(basename "$input_dir")"
+        sample_dirs="$input_dir"
+        ;;
+      *)
+        echo ""
+        echo "[ERROR] --aligned-bams expected a .bam file or a directory of .bam files"
+        echo "  Given: $input_dir"
+        exit 1
+        ;;
+    esac
+  elif [[ -d "$input_dir" ]]; then
+    shopt -s nullglob
+    for aligned_bam in "$input_dir"/*.bam; do
+      echo "    $(basename "$aligned_bam")"
+      sample_dirs="$sample_dirs$aligned_bam"$'\n'
+    done
+    shopt -u nullglob
+    sample_dirs=$(printf '%s\n' "$sample_dirs" | grep -v '^$' | sort)
+  else
+    echo ""
+    echo "[ERROR] Input not found: $input_dir"
+    exit 1
+  fi
+
+  if [[ -z "$sample_dirs" ]]; then
+    echo ""
+    echo "[ERROR] No aligned BAM files found in $input_dir"
+    echo "  Put *.bam files directly in that directory. Subdirectories are ignored."
+    echo "  An unaligned merged BAM cannot be used with --aligned-bams."
+    exit 1
+  fi
+else
 echo "  Include fail directory: $include_fail"
 
 # Build list of base directories to scan
@@ -479,8 +589,9 @@ if [[ -z "$sample_dirs" ]]; then
   echo "  3. BAM files are directly in barcode directories"
   exit 1
 fi
+fi
 
-sample_count=$(echo "$sample_dirs" | wc -l)
+sample_count=$(echo "$sample_dirs" | grep -c .)
 echo "[OK] Found $sample_count sample(s) to process"
 echo ""
 
@@ -497,27 +608,55 @@ processed_samples=""
 for sample_path in $sample_dirs; do
   sample_num=$((sample_num + 1))
 
-  # Extract sample information
-  input_dir_name=$(basename "$sample_path")
-  
-  # Get first BAM file to extract barcode (disable pipefail to avoid SIGPIPE)
-  first_bam=$(set +o pipefail; find "$sample_path" -maxdepth 1 -name '*.bam' 2>/dev/null | head -1 || true)
-  if [[ -n "$first_bam" ]]; then
-    barcode=$(get_barcode "$first_bam")
+  if [[ "$aligned_bams" == true ]]; then
+    input_bam="$sample_path"
+    sample_name=$(aligned_sample_name "$input_bam")
+    input_dir_name=$(basename "$input_bam")
+    if [[ -n "$multi_mapping" ]]; then
+      barcode_tag=$(set +o pipefail; samtools view "$input_bam" 2>/dev/null | head -1 | grep -oE 'barcode[0-9]+' || true)
+      if [[ -z "$barcode_tag" ]]; then
+        echo "=========================================="
+        echo "Sample $sample_num of $sample_count (v${VERSION})"
+        echo "=========================================="
+        echo "[WARN] No barcode tag in $input_dir_name"
+        echo "  Multi-species mode needs a barcode in the BAM. Skipping."
+        echo ""
+        continue
+      fi
+      barcode=$(get_barcode "$input_bam")
+    else
+      barcode=""
+    fi
   else
-    barcode="b00"
+    input_bam=""
+    # Extract sample information
+    input_dir_name=$(basename "$sample_path")
+
+    # Get first BAM file to extract barcode (disable pipefail to avoid SIGPIPE)
+    first_bam=$(set +o pipefail; find "$sample_path" -maxdepth 1 -name '*.bam' 2>/dev/null | head -1 || true)
+    if [[ -n "$first_bam" ]]; then
+      barcode=$(get_barcode "$first_bam")
+    else
+      barcode="b00"
+    fi
+
+    # Create sample name with barcode suffix (e.g., L07_HUMB_LAB_b03)
+    sample_name="${input_dir_name}_${barcode}"
   fi
-  
-  # Create sample name with barcode suffix (e.g., L07_HUMB_LAB_b03)
-  sample_name="${input_dir_name}_${barcode}"
 
   echo "=========================================="
   echo "Sample $sample_num of $sample_count (v${VERSION})"
   echo "=========================================="
-  echo "Input dir:     $input_dir_name"
-  echo "Barcode:       $barcode"
-  echo "Sample ID:     $sample_name"
-  echo "Input path:    $sample_path"
+  if [[ "$aligned_bams" == true ]]; then
+    echo "Mode:          aligned BAMs, modkit only"
+    echo "Aligned BAM:   $input_bam"
+    echo "Sample ID:     $sample_name"
+  else
+    echo "Input dir:     $input_dir_name"
+    echo "Barcode:       $barcode"
+    echo "Sample ID:     $sample_name"
+    echo "Input path:    $sample_path"
+  fi
   echo "Threads:       $THREADS"
   
   # Determine which reference to use for this sample
@@ -540,6 +679,14 @@ for sample_path in $sample_dirs; do
   fi
   echo ""
 
+  if [[ "$aligned_bams" == true ]] && ! bam_has_sq "$input_bam"; then
+    echo "[WARN] No @SQ line in the header of $input_dir_name"
+    echo "  This BAM is not aligned. An unaligned merged BAM cannot be used here."
+    echo "  Skipping this sample."
+    echo ""
+    continue
+  fi
+
   # Create output directory (flat structure)
   out_sample_dir="$output_dir/$sample_name"
   mkdir -p "$out_sample_dir"
@@ -552,16 +699,29 @@ for sample_path in $sample_dirs; do
   echo ""
 
   if [[ "$dry_run" == true ]]; then
-    echo "[DRY RUN] Would process this sample with $THREADS threads using $ref_name"
+    if [[ "$aligned_bams" == true ]]; then
+      echo "[DRY RUN] Would run modkit on $input_bam using $ref_name"
+    else
+      echo "[DRY RUN] Would process this sample with $THREADS threads using $ref_name"
+    fi
     echo ""
     continue
   fi
 
+  if [[ "$aligned_bams" == true ]]; then
+    echo "Using the supplied aligned BAM. Merge and alignment are skipped."
+    minimap_bam="$input_bam"
+    if [[ ! -f "${minimap_bam}.bai" && ! -f "${minimap_bam}.csi" ]]; then
+      echo "  No index found. Building one with samtools index."
+      samtools index -@${THREADS} "$minimap_bam" 2>>"$sample_log"
+    fi
+    echo ""
+  else
   # Step 1: Merge BAM files (these contain methylation tags from basecalling)
   echo "Step 1/4: Merging BAM files with methylation tags"
   merged_bam="$out_sample_dir/${sample_name}.merged.bam"
 
-  if [[ -s "$merged_bam" && $(file_size_bytes "$merged_bam") -gt 100000000 ]]; then
+  if [[ "$force" != true && -s "$merged_bam" && $(file_size_bytes "$merged_bam") -gt 100000000 ]]; then
     merged_size=$(du -h "$merged_bam" | cut -f1)
     echo "  [OK] Already exists: $merged_bam ($merged_size)"
   else
@@ -579,6 +739,7 @@ for sample_path in $sample_dirs; do
     fi
 
     echo "  Merging BAM files (using $THREADS threads)..."
+    merged_partial="${merged_bam}.partial.${timestamp}.$$"
     {
       read firstbam
       if ! samtools view -@${THREADS} -H "$firstbam" > /dev/null 2>>"$sample_log"; then
@@ -593,8 +754,9 @@ for sample_path in $sample_dirs; do
           echo "  [WARN]  Corrupt BAM: $bam" | tee -a "$sample_log"
         fi
       done
-    } < "$temp_bam_list" | samtools view -@${THREADS} -ubS - | samtools sort -@${THREADS} -o "$merged_bam" -
+    } < "$temp_bam_list" | samtools view -@${THREADS} -ubS - | samtools sort -@${THREADS} -o "$merged_partial" -
 
+    mv -f "$merged_partial" "$merged_bam"
     samtools index -@${THREADS} "$merged_bam"
     merged_size=$(du -h "$merged_bam" | cut -f1)
     echo "  [OK] BAMs merged: $merged_bam ($merged_size)"
@@ -605,7 +767,7 @@ for sample_path in $sample_dirs; do
   echo "Step 2/4: Aligning reads with minimap2"
   minimap_bam="$out_sample_dir/${sample_name}.minimap.bam"
 
-  if [[ -s "$minimap_bam" && $(file_size_bytes "$minimap_bam") -gt 100000000 ]]; then
+  if [[ "$force" != true && -s "$minimap_bam" && $(file_size_bytes "$minimap_bam") -gt 100000000 ]]; then
     bam_size=$(du -h "$minimap_bam" | cut -f1)
     echo "  [OK] Already exists: $minimap_bam ($bam_size)"
   else
@@ -615,11 +777,13 @@ for sample_path in $sample_dirs; do
     echo "    Mode: map-ont with -y (copy tags)"
     start_time=$(date +%s)
 
+    minimap_partial="${minimap_bam}.partial.${timestamp}.$$"
     samtools fastq -@${THREADS} -T MM,ML "$merged_bam" | \
       minimap2 -ax map-ont -t ${THREADS} -y --secondary=no "$sample_ref" - 2>>"$sample_log" | \
       samtools view -@${THREADS} -S -b - 2>>"$sample_log" | \
-      samtools sort -@${THREADS} -o "$minimap_bam" -T "$out_sample_dir/reads.tmp" - 2>>"$sample_log"
+      samtools sort -@${THREADS} -o "$minimap_partial" -T "$out_sample_dir/reads.tmp.${timestamp}.$$" - 2>>"$sample_log"
 
+    mv -f "$minimap_partial" "$minimap_bam"
     echo "  Creating BAM index..."
     samtools index -@${THREADS} "$minimap_bam" 2>>"$sample_log"
 
@@ -631,25 +795,42 @@ for sample_path in $sample_dirs; do
     echo "    Output: $minimap_bam ($bam_size)"
   fi
   echo ""
+  fi
 
   # Step 3: Methylation calling
-  echo "Step 3/4: Calling methylation with modkit"
+  if [[ "$aligned_bams" == true ]]; then
+    echo "Calling methylation with modkit"
+    echo "  Source BAM: $minimap_bam"
+  else
+    echo "Step 3/4: Calling methylation with modkit"
+  fi
   methyl_bed="$out_sample_dir/${sample_name}.CpG.bed"
 
-  if [[ -s "$methyl_bed" && $(file_size_bytes "$methyl_bed") -gt 100000 ]]; then
+  if [[ "$force" != true && -s "$methyl_bed" && $(file_size_bytes "$methyl_bed") -gt 100000 ]]; then
     bed_size=$(du -h "$methyl_bed" | cut -f1)
     echo "  [OK] Already exists: $methyl_bed ($bed_size)"
   else
     echo "  Running modkit pileup..."
     echo "    Reference: $ref_name"
     echo "    Mode: CpG methylation"
+    echo "    Strands: $strand_mode"
     echo "    Threads: $THREADS"
     start_time=$(date +%s)
 
-    # Run modkit with error handling (show errors on screen)
-    # --modified-bases 5mC = 5-methylcytosine (CpG methylation)
-    if modkit pileup "$minimap_bam" "$methyl_bed" \
-      --cpg --ref "$sample_ref" -t ${THREADS} --combine-mods --modified-bases 5mC 2>&1 | tee -a "$sample_log"; then
+    # --modified-bases 5mC = 5-methylcytosine at CpG.
+    # --combine-mods pools modification codes. It does not pool strands.
+    # --combine-strands is added only when the user asks for one row per CpG.
+    bed_partial="${methyl_bed}.partial.${timestamp}.$$"
+    modkit_cmd=(
+      modkit pileup "$minimap_bam" "$bed_partial"
+      --cpg --ref "$sample_ref" -t "${THREADS}"
+      --combine-mods --modified-bases 5mC
+    )
+    if [[ "$combine_strands" == true ]]; then
+      modkit_cmd+=(--combine-strands)
+    fi
+    if "${modkit_cmd[@]}" 2>&1 | tee -a "$sample_log"; then
+      mv -f "$bed_partial" "$methyl_bed"
       end_time=$(date +%s)
       elapsed=$((end_time - start_time))
       bed_size=$(du -h "$methyl_bed" | cut -f1)
@@ -657,17 +838,22 @@ for sample_path in $sample_dirs; do
       echo "    Output: $methyl_bed ($bed_size)"
     else
       echo "  [WARN]  modkit pileup failed - check sample log for details"
+      echo "  The previous CpG bed was left in place."
       echo "  Continuing to next sample..."
       continue
     fi
   fi
   echo ""
 
+  if [[ "$aligned_bams" == true ]]; then
+    echo "Qualimap is not run in aligned-BAM mode."
+    echo ""
+  else
   # Step 4: Quality control
   echo "Step 4/4: Running Qualimap QC"
   qualimap_dir="$out_sample_dir/qualimap"
 
-  if [[ -f "$qualimap_dir/qualimapReport.html" ]]; then
+  if [[ "$force" != true && -f "$qualimap_dir/qualimapReport.html" ]]; then
     echo "  [OK] Already exists: $qualimap_dir/qualimapReport.html"
   else
     echo "  Running Qualimap bamqc..."
@@ -682,16 +868,30 @@ for sample_path in $sample_dirs; do
       echo "    (Qualimap limited to 32 threads)"
     fi
 
-    qualimap bamqc -bam "$minimap_bam" -nw 5000 -nt ${qualimap_threads} \
-      -c -outdir "$qualimap_dir" &>>"$sample_log"
-
-    end_time=$(date +%s)
-    elapsed=$((end_time - start_time))
-
-    echo "  [OK] QC complete ($elapsed seconds)"
-    echo "    Report: $qualimap_dir/qualimapReport.html"
+    qualimap_rerun="$out_sample_dir/qualimap.rerun.${timestamp}.$$"
+    if qualimap bamqc -bam "$minimap_bam" -nw 5000 -nt ${qualimap_threads} \
+      -c -outdir "$qualimap_rerun" >>"$sample_log" 2>&1; then
+      if [[ -d "$qualimap_dir" ]]; then
+        qualimap_previous="$out_sample_dir/qualimap.previous-${timestamp}"
+        if [[ -e "$qualimap_previous" ]]; then
+          qualimap_previous="${qualimap_previous}-$$"
+        fi
+        mv "$qualimap_dir" "$qualimap_previous"
+      fi
+      mv "$qualimap_rerun" "$qualimap_dir"
+      end_time=$(date +%s)
+      elapsed=$((end_time - start_time))
+      echo "  [OK] QC complete ($elapsed seconds)"
+      echo "    Report: $qualimap_dir/qualimapReport.html"
+    else
+      echo "  [WARN]  Qualimap failed - check sample log for details"
+      echo "  The previous Qualimap report was left in place."
+      echo "  Continuing to next sample..."
+      continue
+    fi
   fi
   echo ""
+  fi
 
   echo "[OK] Sample $sample_name complete!"
   echo ""
@@ -793,12 +993,13 @@ echo "=========================================="
 echo "Step 5/5: Generating Summary Report"
 echo "=========================================="
 
-# Get the directory where this script is located
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SUMMARY_SCRIPT="$SCRIPT_DIR/generate_summary.R"
 
 if [[ -f "$SUMMARY_SCRIPT" ]]; then
   if command -v Rscript &> /dev/null; then
+    if [[ "$combine_strands" == true ]]; then
+      echo "Strand-bias plots read column 6. With --combine-strands every row is the plus-strand coordinate, so that plot does not compare strands."
+    fi
     echo "Running summary statistics and plot generation..."
     if [[ "$expanded_plots" == true ]]; then
       Rscript "$SUMMARY_SCRIPT" "$output_dir" --expanded-plots 2>&1 | tee -a "$log_file"

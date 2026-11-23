@@ -9,9 +9,9 @@
 
 *Part of the [MethylSense](https://github.com/markusdrag/MethylSense) Package*
 
-[![Version](https://img.shields.io/badge/version-1.5.0-brightgreen.svg)](https://github.com/markusdrag/NanoporeToBED-Pipeline)
+[![Version](https://img.shields.io/badge/version-1.7.0-brightgreen.svg)](https://github.com/markusdrag/NanoporeToBED-Pipeline)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![DOI](https://img.shields.io/badge/DOI-10.1101%2F2025.04.11.648151-orange.svg)](https://doi.org/10.1101/2025.04.11.648151)
+[![DOI](https://img.shields.io/badge/DOI-10.1128%2Fjcm.01054--25-orange.svg)](https://doi.org/10.1128/jcm.01054-25)
 
 </div>
 
@@ -254,6 +254,9 @@ The pipeline will display the barcode-to-reference mapping at startup and provid
 | | `--include-fail` | Also process samples from fail/ directory | No | false |
 | | `--include-empty-barcodes` | Include barcode## directories (default: skip, only process named samples) | No | false |
 | | `--expanded-plots` | Generate extended analysis plots (distribution, QC, comparative) | No | false |
+| | `--combine-strands` | Sum both cytosines of each CpG onto the plus-strand coordinate. Default keeps the two strand rows separate | No | false |
+| | `--force` | Re-run merge, alignment, methylation calling, and Qualimap even when those outputs already exist. With `--aligned-bams`, only modkit is re-run | No | false |
+| | `--aligned-bams` | Run modkit on BAMs already aligned to the reference. `-i` is one BAM or a directory of `*.bam` files. Subdirectories are ignored | No | false |
 | `-h` | `--help` | Show help message | No | - |
 
 #### Multi-Species Mode
@@ -269,9 +272,55 @@ The pipeline will display the barcode-to-reference mapping at startup and provid
 | | `--include-fail` | Also process samples from fail/ directory | No | false |
 | | `--include-empty-barcodes` | Include barcode## directories (default: skip, only process named samples) | No | false |
 | | `--expanded-plots` | Generate extended analysis plots (distribution, QC, comparative) | No | false |
+| | `--combine-strands` | Sum both cytosines of each CpG onto the plus-strand coordinate. Default keeps the two strand rows separate | No | false |
+| | `--force` | Re-run merge, alignment, methylation calling, and Qualimap even when those outputs already exist. With `--aligned-bams`, only modkit is re-run | No | false |
+| | `--aligned-bams` | Run modkit on BAMs already aligned to the reference. `-i` is one BAM or a directory of `*.bam` files. Subdirectories are ignored | No | false |
 | `-h` | `--help` | Show help message | No | - |
 
 **Note:** Cannot mix single-species (`-ref`) and multi-species (`--multi-mapping`/`--multi-refs`) modes. Choose one mode per run.
+
+### Aligned BAMs
+
+Use this when the reads are already aligned to the reference and you only want the CpG bed. Merge, alignment, and Qualimap are not run. The BAM must contain `@SQ` lines for that reference. An unaligned merged BAM cannot be used here.
+
+`-i` is one BAM file, or a directory. Only `*.bam` files directly in that directory are samples. A subdirectory is ignored.
+
+The sample name is the filename without `.bam`, and without a trailing `.minimap`. `001_ROCK_EDI_b01.minimap.bam` is written as `001_ROCK_EDI_b01.CpG.bed`. The barcode is not added again. If neither a `.bai` nor a `.csi` index is present, the script builds one. That is not a new alignment.
+
+```bash
+bash NanoporeToBED.sh \
+  --aligned-bams \
+  -i /path/to/mapped_bam_files \
+  -o /path/to/results \
+  -ref /path/to/genome.fna \
+  -t 8 \
+  --combine-strands
+```
+
+`--combine-strands` writes one row per CpG. Leave it off to keep the plus-strand and minus-strand cytosines as two rows. `-t` is the modkit thread count. The output directory must already exist.
+
+Add `--force` when a CpG bed from an earlier run is already in the output directory. Without `--force`, a bed larger than 100 kb is kept. In this mode `--force` re-runs modkit only.
+
+### Strand rows and reruns
+
+By default modkit writes the plus-strand cytosine and the minus-strand cytosine of a CpG as two rows, one base apart. `--combine-strands` adds those counts onto the plus-strand coordinate, so the bed has one row per CpG.
+
+That sum can let a CpG pass a later coverage cutoff when each strand alone is too shallow. It also averages a difference between the two strands. On one shallow cfDNA cohort, coverage 10 gained 1,529 CpGs this way, and 18 of 35 samples still had no site. Separate strand rows remain the default.
+
+`--combine-strands` does not rebuild a bed that is already on disk. A finished output directory needs both switches:
+
+```bash
+bash NanoporeToBED.sh \
+  -i /data/nanopore/fastq_gpu_hac_mod \
+  -o /data/nanopore/methylation_results \
+  -ref /data/references/genome.fna \
+  --combine-strands \
+  --force
+```
+
+`--force` re-runs the merge, the alignment, methylation calling, and Qualimap for every sample. Each step writes a temporary file and replaces the real output only after that step succeeds. A failed modkit run leaves the previous CpG bed in place. The previous Qualimap directory is renamed `qualimap.previous-<timestamp>` and is not deleted. This does not repeat the basecall. The input is still the existing pass BAMs.
+
+With `--combine-strands`, column 6 of the bed is the plus-strand coordinate for every row. The strand-bias plot then has no second strand to compare.
 
 ### Reference Genome Format
 The reference genome should be a single FASTA file:
@@ -309,6 +358,8 @@ output_dir/
 - **`.minimap.bam`**: Re-aligned BAM files to reference genome
 - **`.CpG.bed`**: BED file with CpG methylation frequencies
   - Format: chromosome, start, end, modification_frequency, coverage, strand
+  - Default: one row for the plus-strand cytosine and one row for the minus-strand cytosine, one base apart
+  - With `--combine-strands`: one row per CpG, with both strands summed onto the plus-strand coordinate
   - Compatible with MethylSense pipeline (see separate repository) and other methylation analysis tools
 - **`qualimap/`**: HTML quality reports with coverage statistics and alignment metrics
 
@@ -517,7 +568,7 @@ done
 If you use this pipeline, please cite:
 
 **Our methodology paper:**
-- Drag, M.H., Hvilsom, C., Poulsen, L.L., Jensen, H.E., Tahas, S.A., Leineweber, C., Cray, C., Bertelsen, M.F., Bojesen, A.M. (2025). New high accuracy diagnostics for avian Aspergillus fumigatus infection using Nanopore methylation sequencing of host cell-free DNA and machine learning prediction. *bioRxiv* 2025.04.11.648151. https://doi.org/10.1101/2025.04.11.648151
+- Drag, M.H., Hvilsom, C., Poulsen, L.L., Jensen, H.E., Tahas, S.A., Leineweber, C., Cray, C., Bertelsen, M.F., Bojesen, A.M. MethylSense: high accuracy machine learning-based diagnostics for Aspergillus fumigatus infection in chickens using host cell-free DNA methylation and Nanopore sequencing. *J Clin Microbiol* 0:e01054-25. https://doi.org/10.1128/jcm.01054-25
 
 **Software tools:**
 - Oxford Nanopore Technologies modkit
